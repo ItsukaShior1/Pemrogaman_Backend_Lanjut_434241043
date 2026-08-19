@@ -33,18 +33,18 @@ func (s *Student) Deactivate() {
 func main() {
 	s1 := Student{ID: 1, Name: "Sari", Grade: 85.0}
 
-	fmt.Println("=== Keadaan awal ===")
+	fmt.Println("Keadaan awal")
 	fmt.Println(s1.GetInfo())
 
 	s1.Activate()
 	s1.UpdateGrade(92.5)
-	fmt.Println("\n=== Setelah Activate() dan UpdateGrade(92.5) ===")
+	fmt.Println("\nSetelah Activate() dan UpdateGrade(92.5)")
 	fmt.Println(s1.GetInfo())
 
 	s1.Deactivate()
-	fmt.Println("\n=== Setelah Deactivate() ===")
+	fmt.Println("\nSetelah Deactivate()")
 	fmt.Println(s1.GetInfo())
 
-	fmt.Println("\n=== Dipanggil via pointer ===")
+	fmt.Println("\nDipanggil via pointer")
 	fmt.Println(s1.GetInfo())
 }

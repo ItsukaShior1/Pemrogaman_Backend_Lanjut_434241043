@@ -38,8 +38,8 @@ func main() {
 	fmt.Printf("sebelum         : nilai=%d\n", nilai)
 
 	passByValue(nilai)
-	fmt.Printf("setelah passByValue  : nilai=%d  (tetap, karena yang dikirim salinan)\n", nilai)
+	fmt.Printf("setelah passByValue  : nilai=%d ", nilai)
 
 	passByPointer(&nilai)
-	fmt.Printf("setelah passByPointer: nilai=%d  (berubah, karena yang dikirim alamat)\n", nilai)
+	fmt.Printf("setelah passByPointer: nilai=%d ", nilai)
 }
