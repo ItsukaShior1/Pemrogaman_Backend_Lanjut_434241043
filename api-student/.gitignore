@@ -16,3 +16,15 @@ go.work.sum
 .idea/
 *.swp
 .DS_Store
+
+# Debug body files used during curl tests
+body*.json
+body_*.json
+
+# PDF laporan — di-render manual saat submit, tidak perlu di-tracked
+Tugas2_NIM.pdf
+
+# Generator script (tidak dipakai setelah generate)
+gen_screenshots.py
+test_all.ps1
+_print.html
