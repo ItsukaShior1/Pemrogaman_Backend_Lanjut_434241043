@@ -1,0 +1,18 @@
+# Binaries
+api-students.exe
+api-students
+*.exe
+
+# Go test artifacts
+*.test
+*.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
