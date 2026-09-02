@@ -117,7 +117,7 @@ func getStudent(c *fiber.Ctx) error {
 func createStudent(c *fiber.Ctx) error {
 	var req CreateStudentRequest
 	if err := c.BodyParser(&req); err != nil {
-		return fail(c, fiber.StatusBadRequest, "body harus berupa JSON yang valid")
+		return fail(c, fiber.StatusBadRequest, "body error: "+err.Error())
 	}
 
 	errs := map[string]string{}
@@ -167,7 +167,7 @@ func replaceStudent(c *fiber.Ctx) error {
 
 	var req ReplaceStudentRequest
 	if err := c.BodyParser(&req); err != nil {
-		return fail(c, fiber.StatusBadRequest, "body harus berupa JSON yang valid")
+		return fail(c, fiber.StatusBadRequest, "body error: "+err.Error())
 	}
 
 	errs := map[string]string{}
