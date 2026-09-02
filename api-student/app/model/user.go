@@ -1,6 +1,15 @@
-package main
+package model
 
 import "time"
+
+type User struct {
+	ID        int       `json:"id"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	Password  string    `json:"-"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
 type Student struct {
 	ID        int       `json:"id"`
@@ -50,4 +59,10 @@ type ListQuery struct {
 	IsActive *bool
 	GradeMin *float64
 	GradeMax *float64
+}
+
+// Offset menghitung berapa baris yang dilewati untuk halaman ini.
+// Perhitungan ini pindah ke sini karena kini dipakai langsung oleh SQL.
+func (q ListQuery) Offset() int {
+	return (q.Page - 1) * q.Limit
 }
