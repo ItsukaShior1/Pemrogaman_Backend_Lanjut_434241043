@@ -1,9 +1,3 @@
-// Package repository berisi lapisan akses data. Ia berbicara langsung
-// dengan PostgreSQL lewat pgx dan menerjemahkan baris menjadi struct model.
-//
-// Catatan: package ini TIDAK mengimpor gofiber. Ia hanya butuh context,
-// driver pgx, dan package model. Dengan begitu, repository mudah diuji
-// dengan database asli (integration test) atau diganti ke driver lain.
 package repository
 
 import (
@@ -18,15 +12,10 @@ import (
 	"api-student/app/model"
 )
 
-// ErrNotFound dikembalikan saat data yang diminta tidak ada.
 var ErrNotFound = errors.New("data tidak ditemukan")
 
-// ErrDuplicate dikembalikan saat terjadi pelanggaran constraint unik
-// (mis. NIM yang sudah dipakai mahasiswa lain).
 var ErrDuplicate = errors.New("data sudah ada")
 
-// StudentRepository adalah kontrak yang harus dipenuhi implementasi manapun.
-// Service hanya bergantung pada interface ini, bukan pada struct konkret.
 type StudentRepository interface {
 	FindAll(ctx context.Context, q model.ListQuery) ([]model.Student, int, error)
 	FindByID(ctx context.Context, id int) (model.Student, error)
@@ -35,9 +24,6 @@ type StudentRepository interface {
 	Delete(ctx context.Context, id int) error
 }
 
-// kolomUrut memetakan nama field yang diizinkan dari query string ke
-// nama kolom sebenarnya di database. Whitelist ini mencegah SQL injection
-// karena klien tidak boleh menentukan kolom urut secara bebas.
 var kolomUrut = map[string]string{
 	"id":         "id",
 	"nim":        "nim",
@@ -46,19 +32,13 @@ var kolomUrut = map[string]string{
 	"created_at": "created_at",
 }
 
-// studentPostgresRepository adalah implementasi StudentRepository di atas
-// PostgreSQL dengan pgxpool.
 type studentPostgresRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewStudentRepository membuat instance repository baru dari sebuah pool.
 func NewStudentRepository(pool *pgxpool.Pool) StudentRepository {
 	return &studentPostgresRepository{pool: pool}
 }
-
-// buildFilter menyusun fragmen WHERE dan argumen sesuai ListQuery.
-// Dipakai oleh FindAll agar query COUNT dan query SELECT konsisten.
 func buildFilter(q model.ListQuery) (string, []any) {
 	where := " WHERE 1 = 1"
 	args := []any{}
@@ -86,7 +66,6 @@ func buildFilter(q model.ListQuery) (string, []any) {
 	return where, args
 }
 
-// FindAll mengambil daftar student dengan paginasi, pencarian, dan filter.
 func (r *studentPostgresRepository) FindAll(
 	ctx context.Context, q model.ListQuery,
 ) ([]model.Student, int, error) {
@@ -145,7 +124,6 @@ func (r *studentPostgresRepository) FindAll(
 	return hasil, total, nil
 }
 
-// FindByID mengambil satu student berdasarkan id.
 func (r *studentPostgresRepository) FindByID(
 	ctx context.Context, id int,
 ) (model.Student, error) {
@@ -168,7 +146,6 @@ func (r *studentPostgresRepository) FindByID(
 	return s, nil
 }
 
-// Create menyimpan student baru. Mengembalikan ErrDuplicate bila NIM bentrok.
 func (r *studentPostgresRepository) Create(
 	ctx context.Context, s model.Student,
 ) (model.Student, error) {
@@ -189,9 +166,6 @@ func (r *studentPostgresRepository) Create(
 
 	return s, nil
 }
-
-// Update memperbarui seluruh field student. PUT dan PATCH keduanya memakai
-// repository method ini; service yang memutuskan field mana yang berubah.
 func (r *studentPostgresRepository) Update(
 	ctx context.Context, s model.Student,
 ) (model.Student, error) {
@@ -216,8 +190,6 @@ func (r *studentPostgresRepository) Update(
 	return s, nil
 }
 
-// Delete menghapus student berdasarkan id. Mengembalikan ErrNotFound bila
-// id tidak ada (tidak ada baris yang terpengaruh).
 func (r *studentPostgresRepository) Delete(ctx context.Context, id int) error {
 	tag, err := r.pool.Exec(
 		ctx,
@@ -232,9 +204,6 @@ func (r *studentPostgresRepository) Delete(ctx context.Context, id int) error {
 	}
 	return nil
 }
-
-// isUniqueViolation mengecek apakah error dari pgx adalah pelanggaran
-// constraint unik. Kode "23505" adalah kode SQLSTATE untuk unique violation.
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {

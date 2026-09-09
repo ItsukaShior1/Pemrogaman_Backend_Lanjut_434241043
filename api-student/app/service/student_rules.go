@@ -17,7 +17,6 @@ func validateNim(nim string) (string, bool) {
 	return "", true
 }
 
-// validateName memvalidasi field nama.
 func validateName(name string) (string, bool) {
 	name = strings.TrimSpace(name)
 	if name == "" {

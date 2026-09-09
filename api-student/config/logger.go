@@ -1,13 +1,3 @@
-// Package config berisi inisialisasi logger aplikasi.
-//
-// Logger menulis ke dua tujuan sekaligus:
-//   1. STDOUT — supaya log langsung terlihat saat develop dengan "go run"
-//   2. File log — logs/app.log dengan rotasi otomatis berbasis ukuran
-//
-// Setiap baris log berformat JSON dan memuat field-field wajib:
-//   time, request_id, method, path, status, duration_ms, ip
-//
-// Folder logs/ tidak di-commit ke git (lihat .gitignore).
 package config
 
 import (
@@ -22,8 +12,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// LogEntry adalah struktur satu baris log permintaan HTTP.
-// Dibuat agar format JSON konsisten untuk parsing otomatis.
 type LogEntry struct {
 	Time       string `json:"time"`
 	RequestID  string `json:"request_id"`
@@ -34,17 +22,12 @@ type LogEntry struct {
 	IP         string `json:"ip"`
 }
 
-// AppLogger adalah logger aplikasi yang thread-safe (digunakan oleh
-// beberapa goroutine secara bersamaan).
 type AppLogger struct {
 	mu      sync.Mutex
 	writer  io.Writer
 	console io.Writer
 }
 
-// NewAppLogger membuka file logs/app.log dan menggabungkannya dengan
-// STDOUT (atau hanya file bila APP_MODE=release). Folder logs/ dibuat
-// bila belum ada.
 func NewAppLogger() (*AppLogger, error) {
 	if err := os.MkdirAll("logs", 0o755); err != nil {
 		return nil, fmt.Errorf("gagal membuat folder logs: %w", err)
@@ -70,7 +53,6 @@ func NewAppLogger() (*AppLogger, error) {
 	}, nil
 }
 
-// WriteLog menulis satu entri log ke file (dengan rotasi) dan ke console.
 func (l *AppLogger) WriteLog(e LogEntry) error {
 	line, err := json.Marshal(e)
 	if err != nil {
@@ -95,8 +77,6 @@ func (l *AppLogger) WriteLog(e LogEntry) error {
 	return nil
 }
 
-// rotateIfNeeded memutar file logs/app.log bila ukurannya > MaxLogSize.
-// Setelah rotasi, hanya MaxLogBackups file backup terbaru yang disimpan.
 func (l *AppLogger) rotateIfNeeded() error {
 	const MaxLogSize int64 = 10 * 1024 * 1024 // 10 MB
 	const MaxLogBackups = 5
@@ -106,14 +86,12 @@ func (l *AppLogger) rotateIfNeeded() error {
 		return nil
 	}
 
-	// Tutup file writer lama lalu rename.
 	if closer, ok := l.writer.(io.Closer); ok {
 		_ = closer.Close()
 	}
 
 	rotated := fmt.Sprintf("logs/app.log.%d", time.Now().Unix())
 	if err := os.Rename("logs/app.log", rotated); err != nil {
-		// Buka ulang writer walau rotasi gagal agar log berikutnya masih jalan.
 		l.openFile()
 		return err
 	}
@@ -123,7 +101,6 @@ func (l *AppLogger) rotateIfNeeded() error {
 	return nil
 }
 
-// openFile (re)open logs/app.log untuk writer baru.
 func (l *AppLogger) openFile() {
 	f, err := os.OpenFile(
 		"logs/app.log",
@@ -137,7 +114,6 @@ func (l *AppLogger) openFile() {
 	l.writer = f
 }
 
-// pruneBackups menghapus backup paling lama hingga tersisa maxBackups file.
 func (l *AppLogger) pruneBackups(maxBackups int) {
 	entries, err := os.ReadDir("logs")
 	if err != nil {
@@ -158,7 +134,6 @@ func (l *AppLogger) pruneBackups(maxBackups int) {
 		backups = append(backups, bk{e.Name(), unix})
 	}
 
-	// Sort ascending (terlama dulu).
 	for i := 0; i < len(backups); i++ {
 		for j := i + 1; j < len(backups); j++ {
 			if backups[i].unix > backups[j].unix {
@@ -171,9 +146,6 @@ func (l *AppLogger) pruneBackups(maxBackups int) {
 		_ = os.Remove("logs/" + backups[i].name)
 	}
 }
-
-// RequestLogger adalah Fiber middleware yang mencatat setiap request
-// dalam format JSON. Dipasang oleh route.Setup().
 func (l *AppLogger) RequestLogger() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
