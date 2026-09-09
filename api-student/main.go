@@ -1,41 +1,36 @@
+// Package main adalah titik masuk aplikasi.
+//
+// main.go TIDAK berisi handler. Tugasnya hanya merakit komponen
+// dalam urutan yang benar:
+//   1. Muat env
+//   2. Buat logger
+//   3. Buat pool database
+//   4. Buat instance Fiber
+//   5. Daftarkan route
+//   6. Jalankan server
+//
+// Bila ada handler di main.go, itu tanda route layer bocor ke main.
 package main
 
 import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
-	"time"
-
-	"api-student/app/repository"
-	"api-student/config"
-	"api-student/database"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/requestid"
+
+	"api-student/config"
+	"api-student/database"
+	"api-student/route"
 )
-
-var metodeBerbody = map[string]bool{
-	fiber.MethodPost:  true,
-	fiber.MethodPut:   true,
-	fiber.MethodPatch: true,
-}
-
-func requireJSON(c *fiber.Ctx) error {
-	if metodeBerbody[c.Method()] {
-		ct := c.Get("Content-Type")
-		if !strings.HasPrefix(ct, fiber.MIMEApplicationJSON) {
-			return fail(c, fiber.StatusUnsupportedMediaType,
-				"Content-Type harus application/json")
-		}
-	}
-	return c.Next()
-}
 
 func main() {
 	config.LoadEnv()
+
+	logger, err := config.NewAppLogger()
+	if err != nil {
+		log.Fatalf("logger: %v", err)
+	}
 
 	pool, err := database.NewPool(context.Background())
 	if err != nil {
@@ -43,11 +38,8 @@ func main() {
 	}
 	defer pool.Close()
 
-	studentRepository := repository.NewStudentRepository(pool)
-	studentHandler := NewStudentHandler(studentRepository)
-
 	app := fiber.New(fiber.Config{
-		AppName: "Praktikum Backend Lanjut - Pertemuan 3 (api-students)",
+		AppName: "Praktikum Backend Lanjut - Pertemuan 4 (api-student)",
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			status := fiber.StatusInternalServerError
 			pesan := "terjadi kesalahan pada server"
@@ -55,50 +47,22 @@ func main() {
 				status = e.Code
 				pesan = e.Message
 			}
-			return fail(c, status, pesan)
+			return c.Status(status).JSON(fiber.Map{
+				"success": false,
+				"message": pesan,
+			})
 		},
 	})
 
-	app.Use(requestid.New())
-	app.Use(logger.New(logger.Config{
-		Format: "[${time}] ${locals:requestid} ${method} ${path} ${status} ${latency}\n",
-	}))
-	app.Use(cors.New())
+	cfg := &config.AppConfig{
+		Fiber:  app,
+		DBPool: pool,
+		Logger: logger,
+	}
 
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.SendString("Hello, World! (api-students)")
-	})
+	route.Setup(app, cfg)
 
-	api := app.Group("/api/v1")
-
-	api.Get("/health", func(c *fiber.Ctx) error {
-		ctx, cancel := context.WithTimeout(c.UserContext(), 2*time.Second)
-		defer cancel()
-
-		if err := pool.Ping(ctx); err != nil {
-			return fail(
-				c,
-				fiber.StatusServiceUnavailable,
-				"database tidak dapat dihubungi",
-			)
-		}
-
-		return ok(c, "server dan database berjalan", nil)
-	})
-
-	s := api.Group("/students", requireJSON)
-	s.Get("/", studentHandler.List)
-	s.Get("/:id", studentHandler.Get)
-	s.Post("/", studentHandler.Create)
-	s.Put("/:id", studentHandler.Replace)
-	s.Patch("/:id", studentHandler.Patch)
-	s.Delete("/:id", studentHandler.Delete)
-
-	app.Use(func(c *fiber.Ctx) error {
-		return fail(c, fiber.StatusNotFound, "endpoint tidak ditemukan")
-	})
-
-	fmt.Println("Server berjalan di http://localhost:3000")
 	port := config.GetEnv("APP_PORT", "3000")
+	fmt.Println("Server berjalan di http://localhost:" + port)
 	log.Fatal(app.Listen(":" + port))
 }

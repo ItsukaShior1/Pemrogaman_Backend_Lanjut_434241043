@@ -1,28 +1,19 @@
-package main
+// Package helper berisi utilitas amplop respons dan parser query string.
+// Ia dipakai oleh handler service untuk menulis respons konsisten dan
+// membaca query string tanpa duplikasi logika di tiap endpoint.
+package helper
 
 import (
-	"api-student/app/model"
-	"context"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
+
+	"api-student/app/model"
 )
 
-func reqCtx(c *fiber.Ctx) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(
-		c.UserContext(),
-		5*time.Second,
-	)
-}
-
-func paramID(c *fiber.Ctx) (int, bool) {
-	id, err := strconv.Atoi(c.Params("id"))
-	return id, err == nil && id > 0
-}
-
-func ok(c *fiber.Ctx, message string, data any) error {
+// Ok menulis respons 200 dengan data tunggal.
+func Ok(c *fiber.Ctx, message string, data any) error {
 	return c.Status(fiber.StatusOK).JSON(model.WebResponse{
 		Success: true,
 		Message: message,
@@ -30,7 +21,8 @@ func ok(c *fiber.Ctx, message string, data any) error {
 	})
 }
 
-func okList(c *fiber.Ctx, message string, data any, meta *model.Meta) error {
+// OkList menulis respons 200 dengan data daftar dan metadata paginasi.
+func OkList(c *fiber.Ctx, message string, data any, meta *model.Meta) error {
 	return c.Status(fiber.StatusOK).JSON(model.WebResponse{
 		Success: true,
 		Message: message,
@@ -38,7 +30,9 @@ func okList(c *fiber.Ctx, message string, data any, meta *model.Meta) error {
 		Meta:    meta,
 	})
 }
-func created(c *fiber.Ctx, message string, data any, location string) error {
+
+// Created menulis respons 201 lengkap dengan header Location.
+func Created(c *fiber.Ctx, message string, data any, location string) error {
 	c.Set("Location", location)
 	return c.Status(fiber.StatusCreated).JSON(model.WebResponse{
 		Success: true,
@@ -46,17 +40,22 @@ func created(c *fiber.Ctx, message string, data any, location string) error {
 		Data:    data,
 	})
 }
-func noContent(c *fiber.Ctx) error {
+
+// NoContent menulis respons 204 tanpa body.
+func NoContent(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func fail(c *fiber.Ctx, status int, message string) error {
+// Fail menulis respons gagal dengan status tertentu.
+func Fail(c *fiber.Ctx, status int, message string) error {
 	return c.Status(status).JSON(model.WebResponse{
 		Success: false,
 		Message: message,
 	})
 }
-func failValidation(c *fiber.Ctx, errs map[string]string) error {
+
+// FailValidation menulis respons 422 berisi map error per field.
+func FailValidation(c *fiber.Ctx, errs map[string]string) error {
 	return c.Status(fiber.StatusUnprocessableEntity).JSON(model.WebResponse{
 		Success: false,
 		Message: "validasi gagal",
@@ -64,20 +63,28 @@ func failValidation(c *fiber.Ctx, errs map[string]string) error {
 	})
 }
 
-var allowedSort = map[string]bool{
-	"id":         true,
-	"nim":        true,
-	"name":       true,
-	"grade":      true,
-	"created_at": true,
-}
+// helperFail / OkList / dll diimpor oleh service lewat nama "helperFail"
+// untuk konsistensi; kita sediakan alias singkat di package helper.
 
-var allowedOrder = map[string]bool{
-	"asc":  true,
-	"desc": true,
-}
+var (
+	allowedSort = map[string]bool{
+		"id":         true,
+		"nim":        true,
+		"name":       true,
+		"grade":      true,
+		"created_at": true,
+	}
 
-func parseListQuery(c *fiber.Ctx) model.ListQuery {
+	allowedOrder = map[string]bool{
+		"asc":  true,
+		"desc": true,
+	}
+)
+
+// ParseListQuery membaca parameter query string GET /students dan
+// mengembalikan ListQuery yang sudah dinormalisasi (default value +
+// clamp + whitelist).
+func ParseListQuery(c *fiber.Ctx) model.ListQuery {
 	q := model.ListQuery{
 		Page:   c.QueryInt("page", 1),
 		Limit:  c.QueryInt("limit", 10),
@@ -107,7 +114,6 @@ func parseListQuery(c *fiber.Ctx) model.ListQuery {
 			q.IsActive = &v
 		}
 	}
-
 	if raw := c.Query("grade_min"); raw != "" {
 		if v, err := strconv.ParseFloat(raw, 64); err == nil {
 			q.GradeMin = &v

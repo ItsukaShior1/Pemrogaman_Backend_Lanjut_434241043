@@ -1,3 +1,8 @@
+// Package config/env.go berisi helper pembaca environment variable.
+//
+// Sumber nilai: environment proses, dimuat dari .env oleh LoadEnv.
+// Dipakai oleh config lain dan database untuk mengambil APP_PORT,
+// DB_HOST, dst.
 package config
 
 import (

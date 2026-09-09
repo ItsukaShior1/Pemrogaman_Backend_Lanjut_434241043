@@ -1,6 +1,8 @@
 # Binaries
 api-students.exe
 api-students
+api-student.exe
+api-student
 *.exe
 
 # Go test artifacts
@@ -22,10 +24,21 @@ body*.json
 body_*.json
 
 # PDF laporan — di-render manual saat submit, tidak perlu di-tracked
-Tugas2_NIM.pdf
+Tugas*.pdf
+Laporan*.pdf
 
 # Generator script (tidak dipakai setelah generate)
 gen_screenshots.py
 test_all.ps1
 _print.html
+build_pdf.py
+
+# Font TTF hanya untuk generate PDF laporan
+DejaVuSans*.ttf
+
+# Logs — file log dirotasi otomatis dan tidak masuk repository
+logs/
+*.log
+
+# Env lokal (tidak boleh di-commit)
 .env
