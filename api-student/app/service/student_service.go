@@ -1,10 +1,3 @@
-// Package service berisi orchestration HTTP. Ia menerima fiber.Ctx,
-// memakai business rules (student_rules.go) untuk validasi, lalu
-// mendelegasikan penyimpanan ke repository.
-//
-// File student_service.go ini memuat handler yang berinteraksi dengan
-// fiber; business rules MURNInya dipisah ke student_rules.go supaya
-// rules dapat diuji tanpa framework HTTP.
 package service
 
 import (

@@ -12,7 +12,7 @@ import (
 	"api-student/app/service"
 	"api-student/config"
 	"api-student/helper"
-	"api-student/middleware"
+	mw "api-student/middleware"
 )
 
 func Setup(app *fiber.App, cfg *config.AppConfig) {
@@ -28,7 +28,21 @@ func Setup(app *fiber.App, cfg *config.AppConfig) {
 
 	api.Get("/health", healthCheck(cfg))
 
-	students := api.Group("/students", middleware.RequireJSON())
+	authRepo := repository.NewUserRepository(cfg.DBPool)
+	rtRepo := repository.NewRefreshTokenRepository(cfg.DBPool)
+	authSvc := service.NewAuthService(authRepo, rtRepo, cfg.TokenIssuer, cfg.LoginLimiter)
+
+	auth := api.Group("/auth")
+	auth.Post("/register", authSvc.Register)
+	auth.Post("/login", authSvc.Login)
+	auth.Post("/refresh", authSvc.Refresh)
+	auth.Post("/logout", authSvc.Logout)
+	auth.Get("/me", mw.RequireAuth(cfg.TokenIssuer), authSvc.Me)
+
+	students := api.Group("/students",
+		mw.RequireJSON(),
+		mw.RequireAuth(cfg.TokenIssuer),
+	)
 	studentRepo := repository.NewStudentRepository(cfg.DBPool)
 	studentSvc := service.NewStudentService(studentRepo)
 
@@ -38,6 +52,14 @@ func Setup(app *fiber.App, cfg *config.AppConfig) {
 	students.Put("/:id", studentSvc.Replace)
 	students.Patch("/:id", studentSvc.Patch)
 	students.Delete("/:id", studentSvc.Delete)
+
+	prestasis := api.Group("/prestasis", mw.RequireJSON())
+	prestasiRepo := repository.NewPrestasiRepository(cfg.DBPool)
+	prestasiSvc := service.NewPrestasiService(prestasiRepo)
+
+	prestasis.Get("/", prestasiSvc.List)
+	prestasis.Get("/:id", prestasiSvc.Get)
+	prestasis.Post("/", prestasiSvc.Create)
 
 	app.Use(func(c *fiber.Ctx) error {
 		return helper.Fail(c, fiber.StatusNotFound, "endpoint tidak ditemukan")
