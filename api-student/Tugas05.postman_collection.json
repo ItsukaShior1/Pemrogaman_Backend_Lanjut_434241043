@@ -1,0 +1,414 @@
+{
+  "info": {
+    "name": "api-student - Pertemuan 5 (Auth)",
+    "_postman_id": "tugas05-api-student-2024",
+    "description": "Koleksi pengujian Authentication & Security untuk API Student. Import ke Postman via File > Import. Set environment variable base_url = http://localhost:3000.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "access_token", "value": "" },
+    { "key": "refresh_token", "value": "" },
+    { "key": "bad_token", "value": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1aWQiOjEsInVzciI6ImJ1ZGkwMSIsInJvbCI6InVzZXIifQ." }
+  ],
+  "item": [
+    {
+      "name": "0. Health (publik, tanpa token)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{base_url}}/api/v1/health", "host": ["{{base_url}}"], "path": ["api", "v1", "health"] }
+      }
+    },
+    {
+      "name": "1. Register - normal (role ditentukan server)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"budi01\",\n  \"email\": \"budi01@lab.id\",\n  \"password\": \"Budi1234Mantap!\",\n  \"role\": \"admin\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/register", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "register"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "pm.test('Role dipaksa user, bukan admin', () => {",
+              "  const j = pm.response.json();",
+              "  pm.expect(j.data.user.role).to.eql('user');",
+              "});",
+              "pm.test('Response tidak memuat field password', () => {",
+              "  const txt = pm.response.text();",
+              "  pm.expect(txt).to.not.include('password');",
+              "});",
+              "if (pm.response.json().data) {",
+              "  pm.collection.set('access_token', pm.response.json().data.access_token);",
+              "  pm.collection.set('refresh_token', pm.response.json().data.refresh_token);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1b. Register - password lemah (harus 422)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"lemah01\",\n  \"email\": \"lemah01@lab.id\",\n  \"password\": \"abc\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/register", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "register"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 422 (validasi)', () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Login - sukses",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"budi01\",\n  \"password\": \"Budi1234Mantap!\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/login", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "login"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Ada access_token & refresh_token', () => {",
+              "  const j = pm.response.json();",
+              "  pm.expect(j.data.access_token).to.exist;",
+              "  pm.expect(j.data.refresh_token).to.exist;",
+              "});",
+              "if (pm.response.json().data) {",
+              "  pm.collection.set('access_token', pm.response.json().data.access_token);",
+              "  pm.collection.set('refresh_token', pm.response.json().data.refresh_token);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2a. Login - username tak terdaftar (pesan HARUS identik)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"tidakada\",\n  \"password\": \"Apapun123!\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/login", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "login"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 401', () => pm.response.to.have.status(401));",
+              "pm.collection.set('msg_unknown_user', pm.response.json().message);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2b. Login - password salah (pesan HARUS identik dengan 2a)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"budi01\",\n  \"password\": \"SalahPassword!\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/login", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "login"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 401', () => pm.response.to.have.status(401));",
+              "pm.test('Pesan identik dengan login username tak terdaftar', () => {",
+              "  pm.expect(pm.response.json().message).to.eql(pm.collection.get('msg_unknown_user'));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2c. Login gagal 5x (siapkan rate limit)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"budi01\",\n  \"password\": \"salah123\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/login", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "login"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 401', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2d. Login gagal ke-6 (harus 429 + Retry-After)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"budi01\",\n  \"password\": \"salah123\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/login", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "login"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 429', () => pm.response.to.have.status(429));",
+              "pm.test('Ada header Retry-After', () => {",
+              "  pm.expect(pm.response.headers.get('Retry-After')).to.exist;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. GET /students tanpa token (harus 401 + WWW-Authenticate)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{base_url}}/api/v1/students", "host": ["{{base_url}}"], "path": ["api", "v1", "students"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 401', () => pm.response.to.have.status(401));",
+              "pm.test('Ada WWW-Authenticate', () => {",
+              "  pm.expect(pm.response.headers.get('WWW-Authenticate')).to.exist;",
+              "  pm.expect(pm.response.headers.get('WWW-Authenticate')).to.include('Bearer');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3a. GET /students dengan token diubah 1 karakter (harus 401)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}X" }],
+        "url": { "raw": "{{base_url}}/api/v1/students", "host": ["{{base_url}}"], "path": ["api", "v1", "students"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 401', () => pm.response.to.have.status(401));",
+              "pm.test('Pesan \"token tidak valid\"', () => {",
+              "  pm.expect(pm.response.json().message).to.include('tidak valid');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3b. GET /students dengan alg=none (harus 401)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{bad_token}}" }],
+        "url": { "raw": "{{base_url}}/api/v1/students", "host": ["{{base_url}}"], "path": ["api", "v1", "students"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 401 (alg=none ditolak)', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3c. GET /students dengan token valid (harus 200)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+        "url": { "raw": "{{base_url}}/api/v1/students", "host": ["{{base_url}}"], "path": ["api", "v1", "students"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200 (token valid)', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. GET /auth/me - profil user",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+        "url": { "raw": "{{base_url}}/api/v1/auth/me", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "me"] }
+      }
+    },
+    {
+      "name": "5. Refresh - rotasi token (RT lama di-rotate, RT baru disimpan)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/refresh", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "refresh"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "if (pm.response.json().data) {",
+              "  pm.collection.set('old_refresh', pm.collection.get('refresh_token'));",
+              "  pm.collection.set('refresh_token', pm.response.json().data.refresh_token);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5a. Refresh lagi dengan RT lama (harus 401, sudah dirotasi)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"refresh_token\": \"{{old_refresh}}\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/refresh", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "refresh"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 401', () => pm.response.to.have.status(401));",
+              "pm.test('Pesan mengandung \"tidak aktif\"', () => {",
+              "  pm.expect(pm.response.json().message).to.include('tidak aktif');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Logout - cabut refresh token",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/logout", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "logout"] }
+      }
+    },
+    {
+      "name": "6a. Refresh setelah logout (harus 401)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/v1/auth/refresh", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "refresh"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 401 setelah logout', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Token expired vs tidak valid (butuh JWT_ACCESS_TTL_MINUTES=1 di .env)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+        "url": { "raw": "{{base_url}}/api/v1/students", "host": ["{{base_url}}"], "path": ["api", "v1", "students"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const m = pm.response.json().message || '';",
+              "pm.test('Pesan spesifik (kedaluwarsa ATAU tidak valid)', () => {",
+              "  pm.expect(m).to.match(/kedaluwarsa|tidak valid/);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

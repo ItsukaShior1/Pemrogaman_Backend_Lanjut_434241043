@@ -31,6 +31,7 @@ func main() {
 	}
 	defer pool.Close()
 
+	
 	app := fiber.New(fiber.Config{
 		AppName: "Praktikum Backend Lanjut - Pertemuan 5 (api-student)",
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
@@ -79,4 +80,6 @@ func main() {
 	port := config.GetEnv("APP_PORT", "3000")
 	fmt.Println("Server berjalan di http://localhost:" + port)
 	log.Fatal(app.Listen(":" + port))
+
+	
 }
