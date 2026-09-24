@@ -12,6 +12,7 @@ import (
 	"api-student/app/model"
 	"api-student/app/repository"
 	"api-student/helper"
+	"api-student/middleware"
 )
 
 type UserService struct {
@@ -39,7 +40,7 @@ func (s *UserService) List(c *fiber.Ctx) error {
 }
 
 func (s *UserService) Get(c *fiber.Ctx) error {
-	caller, _ := helper.GetUser(c)
+	caller, _ := middleware.GetUser(c)
 	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil || id <= 0 {
 		return helper.Fail(c, fiber.StatusBadRequest, "id harus angka positif")

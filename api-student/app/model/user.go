@@ -39,6 +39,10 @@ type LogoutRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+type AssignRoleRequest struct {
+	Role string `json:"role"`
+}
+
 type AuthResponse struct {
 	User         UserResponse `json:"user"`
 	AccessToken  string       `json:"access_token"`

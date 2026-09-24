@@ -3,12 +3,28 @@ package middleware
 import (
 	"github.com/gofiber/fiber/v2"
 
+	"api-student/app/model"
 	"api-student/helper"
 )
 
+func GetUser(c *fiber.Ctx) (model.AuthUser, bool) {
+	uid, ok1 := c.Locals(LocalsUserID).(int)
+	uname, ok2 := c.Locals(LocalsUsername).(string)
+	role, ok3 := c.Locals(LocalsRole).(string)
+
+	if !ok1 || !ok2 || !ok3 {
+		return model.AuthUser{}, false
+	}
+	return model.AuthUser{
+		UserID:   uid,
+		Username: uname,
+		Role:     role,
+	}, true
+}
+
 func RequirePermission(perms *helper.PermissionSet, permission string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		user, ok := helper.GetUser(c)
+		user, ok := GetUser(c)
 		if !ok {
 			return helper.Fail(c, fiber.StatusUnauthorized, "belum terautentikasi")
 		}
@@ -29,7 +45,7 @@ func RequireRole(roles ...string) fiber.Handler {
 	}
 
 	return func(c *fiber.Ctx) error {
-		user, ok := helper.GetUser(c)
+		user, ok := GetUser(c)
 		if !ok {
 			return helper.Fail(c, fiber.StatusUnauthorized, "belum terautentikasi")
 		}

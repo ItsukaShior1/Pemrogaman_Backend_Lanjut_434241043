@@ -32,7 +32,7 @@ func main() {
 	defer pool.Close()
 
 	app := fiber.New(fiber.Config{
-		AppName: "Praktikum Backend Lanjut - Pertemuan 5 (api-student)",
+		AppName: "Praktikum Backend Lanjut - Pertemuan 6 (api-student)",
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			status := fiber.StatusInternalServerError
 			pesan := "terjadi kesalahan pada server"
@@ -66,17 +66,9 @@ func main() {
 	limiter.Start(5 * time.Minute)
 	defer limiter.Stop()
 
-	cfg := &config.AppConfig{
-		Fiber:        app,
-		DBPool:       pool,
-		Logger:       logger,
-		JWT:          tokens,
-		LoginLimiter: limiter,
-	}
-
 	roleRepo := repository.NewRoleRepository(pool)
-	ctx, cancelLoad := context.WithTimeout(context.Background(), 5*time.Second)
-	rawPerms, err := roleRepo.LoadPermissions(ctx)
+	ctxLoad, cancelLoad := context.WithTimeout(context.Background(), 5*time.Second)
+	rawPerms, err := roleRepo.LoadPermissions(ctxLoad)
 	cancelLoad()
 	if err != nil {
 		log.Fatalf("role permission: %v", err)
@@ -84,6 +76,8 @@ func main() {
 	perms := helper.NewPermissionSet(rawPerms)
 
 	userRepo := repository.NewUserRepository(pool)
+	refreshRepo := repository.NewRefreshTokenRepository(pool)
+	authSvc := service.NewAuthService(userRepo, refreshRepo, tokens, limiter)
 	userSvc := service.NewUserService(userRepo, perms)
 
 	route.Register(app, route.Dependencies{
@@ -91,6 +85,12 @@ func main() {
 		JWT:         tokens,
 		Permissions: perms,
 		UserService: userSvc,
+		AuthService: authSvc,
 	})
 
+	app.Use(logger.RequestLogger())
+
+	addr := config.GetEnv("APP_ADDR", ":"+config.GetEnv("APP_PORT", "3000"))
+	log.Printf("server mendengarkan %s", addr)
+	log.Fatal(app.Listen(addr))
 }
