@@ -12,13 +12,6 @@ import (
 	"api-student/app/model"
 )
 
-type UserRepository interface {
-	Create(ctx context.Context, u model.User) (model.User, error)
-	FindByUsername(ctx context.Context, username string) (model.User, error)
-	FindByEmail(ctx context.Context, email string) (model.User, error)
-	FindByID(ctx context.Context, id int) (model.User, error)
-}
-
 type userPostgresRepository struct {
 	pool *pgxpool.Pool
 }
@@ -109,4 +102,44 @@ func isUserUniqueViolation(err error) bool {
 		return pgErr.Code == "23505"
 	}
 	return false
+}
+
+type UserRepository interface {
+	Create(ctx context.Context, u model.User) (model.User, error)
+	FindByUsername(ctx context.Context, username string) (model.User, error)
+	FindByEmail(ctx context.Context, email string) (model.User, error)
+	FindByID(ctx context.Context, id int) (model.User, error)
+	ListAll(ctx context.Context) ([]model.User, error)
+	Delete(ctx context.Context, id int) error
+}
+
+func (r *userPostgresRepository) ListAll(ctx context.Context) ([]model.User, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, username, email, password_hash, role, created_at, updated_at
+            FROM users ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("mengambil daftar user: %w", err)
+	}
+	defer rows.Close()
+	out := []model.User{}
+	for rows.Next() {
+		var u model.User
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash,
+			&u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("membaca baris user: %w", err)
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (r *userPostgresRepository) Delete(ctx context.Context, id int) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("menghapus user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

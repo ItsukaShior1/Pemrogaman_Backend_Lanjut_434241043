@@ -4,12 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 
+	"api-student/app/repository"
 	"api-student/app/service"
 	"api-student/config"
 	"api-student/database"
@@ -31,7 +31,6 @@ func main() {
 	}
 	defer pool.Close()
 
-	
 	app := fiber.New(fiber.Config{
 		AppName: "Praktikum Backend Lanjut - Pertemuan 5 (api-student)",
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
@@ -71,15 +70,27 @@ func main() {
 		Fiber:        app,
 		DBPool:       pool,
 		Logger:       logger,
-		TokenIssuer:  tokens,
+		JWT:          tokens,
 		LoginLimiter: limiter,
 	}
 
-	route.Setup(app, cfg)
+	roleRepo := repository.NewRoleRepository(pool)
+	ctx, cancelLoad := context.WithTimeout(context.Background(), 5*time.Second)
+	rawPerms, err := roleRepo.LoadPermissions(ctx)
+	cancelLoad()
+	if err != nil {
+		log.Fatalf("role permission: %v", err)
+	}
+	perms := helper.NewPermissionSet(rawPerms)
 
-	port := config.GetEnv("APP_PORT", "3000")
-	fmt.Println("Server berjalan di http://localhost:" + port)
-	log.Fatal(app.Listen(":" + port))
+	userRepo := repository.NewUserRepository(pool)
+	userSvc := service.NewUserService(userRepo, perms)
 
-	
+	route.Register(app, route.Dependencies{
+		Pool:        pool,
+		JWT:         tokens,
+		Permissions: perms,
+		UserService: userSvc,
+	})
+
 }

@@ -55,11 +55,17 @@ type UserResponse struct {
 }
 
 type RefreshToken struct {
-	ID          int        `json:"id"`
-	UserID      int        `json:"user_id"`
-	TokenHash   string     `json:"-"`
-	ExpiresAt   time.Time  `json:"expires_at"`
-	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
-	ReplacedBy  *int       `json:"replaced_by,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID         int        `json:"id"`
+	UserID     int        `json:"user_id"`
+	TokenHash  string     `json:"-"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
+	ReplacedBy *int       `json:"replaced_by,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+type AuthUser struct {
+	UserID   int
+	Username string
+	Role     string
 }

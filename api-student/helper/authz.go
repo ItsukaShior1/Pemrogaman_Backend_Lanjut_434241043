@@ -1,11 +1,32 @@
 package helper
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/gofiber/fiber/v2"
+
+	"api-student/app/model"
+	"api-student/middleware"
+)
 
 type PermissionSet struct {
 	byRole map[string]map[string]struct{}
 }
 
+func GetUser(c *fiber.Ctx) (model.AuthUser, bool) {
+	uid, ok1 := c.Locals(middleware.LocalsUserID).(int)
+	uname, ok2 := c.Locals(middleware.LocalsUsername).(string)
+	role, ok3 := c.Locals(middleware.LocalsRole).(string)
+
+	if !ok1 || !ok2 || !ok3 {
+		return model.AuthUser{}, false
+	}
+	return model.AuthUser{
+		UserID:   uid,
+		Username: uname,
+		Role:     role,
+	}, true
+}
 func NewPermissionSet(raw map[string][]string) *PermissionSet {
 	byRole := make(map[string]map[string]struct{}, len(raw))
 
