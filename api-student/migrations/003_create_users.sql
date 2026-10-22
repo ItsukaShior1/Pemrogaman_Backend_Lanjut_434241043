@@ -14,3 +14,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_username_key
 
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_key
     ON users (email);
+
+ALTER TABLE users
+DROP CONSTRAINT IF EXISTS users_role_check;
+
+ALTER TABLE users
+ADD CONSTRAINT users_role_check
+CHECK (role IN ('user', 'staff', 'admin'));
+
+ALTER TABLE users
+DROP CONSTRAINT IF EXISTS users_role_fkey;
+
+ALTER TABLE users
+ADD CONSTRAINT users_role_fkey
+FOREIGN KEY (role) REFERENCES roles(name)
+ON UPDATE CASCADE;

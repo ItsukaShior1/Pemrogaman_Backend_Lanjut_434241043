@@ -1,0 +1,51 @@
+$kind: http-request
+name: http://localhost:3000/api/v1/students
+description: ""
+url: http://localhost:3000/api/v1/students
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: "{\r
+
+    \     \"nim\": \"99999999\",\r
+
+    \     \"name\": \"Palsu\",\r
+
+    \     \"grade\": 80,\r
+
+    \     \"is_active\": true,\r
+
+    \     \"owner_id\": 1\r
+
+    \   }"
+auth:
+  type: bearer
+  credentials:
+    token: "{{t_staff}}"
+scripts:
+  - type: afterResponse
+    code: "   pm.test(\"status 201 Created\", () => pm.response.to.have.status(201));\r
+
+      \r
+
+      \   pm.test(\"owner_id di body DIABAIKAN, bukan 1\", () => {\r
+
+      \       const r = pm.response.json();\r
+
+      \       pm.expect(r.data.owner_id).to.not.eql(1);\r
+
+      \   });\r
+
+      \r
+
+      \   pm.test(\"owner_id diisi otomatis dari token\", () => {\r
+
+      \       const r = pm.response.json();\r
+
+      \       pm.expect(typeof r.data.owner_id).to.eql(\"number\");\r
+
+      \   });"
+    language: text/javascript
+order: 1790265211019

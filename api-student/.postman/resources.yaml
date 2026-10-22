@@ -1,0 +1,7 @@
+# Use this workspace to collaborate
+workspace:
+  id: b51688a9-c745-4030-8970-3ac7231916f9
+
+localResources:
+  collections:
+    - ../Tugas05.postman_collection.json

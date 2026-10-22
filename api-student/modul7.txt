@@ -1,0 +1,834 @@
+Program Studi Mata Kuliah Alokasi Waktu
+
+MODUL PRAKTIKUM PEMROGRAMAN BACKEND LANJUT Pertemuan 7 -- Advanced API Design
+D4 Teknik Informatika -- Fakultas Vokasi, Universitas Airlangga Praktikum Pemrograman Backend Lanjut (2 SKS) -- Semester 5 100 menit praktikum terbimbing + 100 menit tugas mandiri
+
+Tujuan Pembelajaran
+Setelah menyelesaikan pertemuan ini, mahasiswa diharapkan mampu:
+1. Mengganti validasi imperatif dengan validasi deklaratif memakai go-playground/validator, termasuk membuat aturan sendiri.
+2. Menjelaskan perbedaan perilaku tag omitempty dan omitnil, serta memilih yang tepat untuk endpoint PATCH.
+3. Menerapkan pagination berbasis cursor (keyset pagination) dan menjelaskan masalah nyata yang tidak dapat diselesaikan pagination berbasis offset.
+4. Melayani lebih dari satu format response melalui content negotiation, serta membedakan header Accept dari Content-Type.
+5. Memusatkan seluruh pembentukan response kegagalan pada satu ErrorHandler, sehingga bentuknya seragam dan detail teknis tidak bocor.
+6. Menjelaskan mengapa kode error yang stabil dan request_id membuat sebuah API jauh lebih mudah dirawat.
+7. Menemukan, mendiagnosis, dan memperbaiki kesalahan pada kode yang tidak ia tulis sendiri -- baik yang ditolak compiler maupun yang lolos compiler tetapi salah perilaku.
+
+ATURAN MAIN -- baca ini lebih dulu Bagian B (Langkah Panduan) modul ini memuat SEMBILAN kesalahan yang ditanam dengan sengaja: tiga di antaranya ditolak compiler, enam sisanya lolos compiler tetapi berperilaku salah. Letaknya tidak ditandai.
+Jangan menyalin bagian B mentah-mentah lalu berharap berhasil. Kode itu memang tidak akan berjalan benar. Tugas Anda adalah membangunnya, menemukan kesembilan kesalahan tersebut, dan memperbaikinya.
+Empat hal yang dijamin benar, sehingga Anda tidak perlu meragukannya: (1) seluruh Bagian A (Landasan Teori) benar dan dapat dijadikan rujukan; (2) seluruh komentar di dalam kode benar dan menyatakan perilaku yang SEHARUSNYA -- bila kode di bawah sebuah komentar bertentangan dengan komentar itu, komentarnya yang benar; (3) Bagian C (Spesifikasi Penerimaan) benar dan merupakan sasaran yang harus Anda capai; (4) tidak ada kesalahan yang ditanam pada bagian penyusunan parameter query -- parameterisasi SQL pada modul ini sudah aman dan tidak boleh Anda ubah.
+Kesembilan kesalahan berada di dalam blok kode Bagian B saja. Tidak ada yang tersembunyi di tempat lain.
+
+Empat kelemahan yang kita warisi sampai Modul 6 1. Validasi ditulis manual. Fungsi ValidateCreate, ValidateReplace, dan ValidateRegister berisi rangkaian if yang panjang. Aturannya terpisah jauh dari definisi struct, sehingga menambah satu field tanpa aturannya sama sekali tidak terlihat salah. 2. Response kegagalan dibentuk di puluhan tempat. Setiap handler memanggil helper.Fail sendiri-sendiri. Tidak ada yang menjamin bentuknya seragam, dan tidak ada yang menjamin kegagalan itu tercatat di log.
+3. Pagination memakai OFFSET. Ia melambat seiring bertambahnya halaman, dan yang lebih berbahaya: ia dapat mengirim baris yang sama dua kali atau melewatkan baris sama sekali bila data berubah di antara dua halaman. 4. API hanya mampu berbicara JSON. Permintaan "ekspor daftar ini ke Excel" tidak dapat dilayani tanpa membuat endpoint baru.
+Pertemuan ini memperbaiki keempatnya.
+
+A. Landasan Teori
+
+A.1 Validasi Imperatif dan Deklaratif Dua gaya menuliskan aturan yang sama:
+
+Imperatif (Modul 1­6)
+
+Bentuk Letak aturan Menambah field baru Pesan kesalahan Aturan antar-field
+
+Rangkaian if di dalam fungsi Jauh dari definisi field Mudah lupa menambahkan aturannya Ditulis satu per satu Bebas, apa pun bisa ditulis
+
+Deklaratif (mulai sekarang) Tag pada definisi struct Pada baris yang sama dengan field Field tanpa tag langsung terlihat Dipusatkan pada satu penerjemah Terbatas; sebagian tetap harus manual
+
+Deklaratif bukan berarti selalu lebih baik. Tag bekerja pada satu field dalam satu waktu, sehingga aturan seperti "setidaknya satu field harus dikirim" atau "role harus ada di dalam database" tetap tidak dapat dinyatakan sebagai tag. Yang kita tuju bukan menghapus seluruh kode validasi, melainkan memindahkan bagian yang berulang -- wajib diisi, panjang minimum, format email -- ke tempat yang lebih dekat dengan definisi datanya, sehingga yang tersisa di dalam kode benar-benar hanya aturan yang menuntut penalaran.
+
+A.2 Cara Kerja go-playground/validator
+Library ini membaca tag validate memakai refleksi, lalu menjalankan setiap aturan berurutan dari kiri ke kanan. Beberapa tag yang dipakai pada modul ini:
+
+Tag required min=3 / max=30 email
+
+Arti Tidak boleh bernilai kosong (zero value) Pada string: panjang karakter. Pada angka: nilai Harus berbentuk alamat email
+
+Tag alphanum oneof=admin staff omitnil
+
+Arti Hanya huruf dan angka Harus salah satu dari daftar Lewati seluruh aturan berikutnya bila nilainya nil
+
+Dua hal wajib diperhatikan. Pertama, objek validator.Validate harus dibuat SEKALI untuk seluruh aplikasi, bukan pada setiap request: ia menyimpan hasil refleksi dalam cache internal, dan membuatnya berulang kali membuang cache tersebut. Kedua, tanpa pengaturan tambahan, pesan kesalahan menyebut nama field Go ("Username") padahal client mengirim dan membaca nama JSON ("username") -- ketidakcocokan yang membuat frontend tidak dapat memetakan pesan ke kolom form.
+
+A.3 omitempty dan omitnil Untuk PATCH kita memakai field pointer agar "tidak dikirim" dapat dibedakan dari "dikirim bernilai kosong". Pertanyaannya: tag mana yang dipakai agar field yang tidak dikirim dilewati?
+Berikut perilaku sebenarnya pada validator v10.22.1, diuji langsung, bukan dikutip dari ingatan:
+
+Tipe field string string *string *string *string
+
+Tag omitempty,min=3 omitnil,min=3 omitempty,min=3 omitnil,min=3 omitnil,min=3
+
+Nilai "" "" menunjuk "" menunjuk "" nil
+
+Hasil LOLOS tanpa diperiksa DITOLAK DITOLAK DITOLAK LOLOS (dilewati)
+
+Baris pertama adalah jebakannya. Pada field bukan pointer, omitempty melewatkan string kosong tanpa satu pun aturan dijalankan -- sehingga {"username":""} dianggap sah dan masuk ke database. Pada field pointer, keduanya kebetulan berperilaku sama.
+Kita tetap menulis omitnil bukan karena hari ini berbeda hasilnya, melainkan karena ia menyatakan maksud yang sebenarnya: "lewati hanya bila nil". Bila suatu saat field ini diubah dari *string menjadi string -- perubahan yang tampak sepele -- omitempty akan diam-diam mulai menerima string kosong, sedangkan omitnil tidak. Memilih tag yang jujur menyatakan maksud adalah cara termurah mencegah pelemahan aturan yang tidak disengaja.
+
+A.4 Masalah Pagination Berbasis Offset Sejak Modul 3 kita memakai LIMIT 10 OFFSET 20. Bentuk ini mudah dipahami dan memungkinkan lompat ke halaman mana pun. Ia memiliki dua kelemahan yang tidak dapat diperbaiki.
+Kelemahan pertama: biaya yang tumbuh
+
+OFFSET 100000 tidak membuat database melompat ke baris ke-100.001. Database tetap membaca dan mengurutkan seratus ribu baris pertama, lalu membuangnya. Halaman 1 cepat, halaman 10.000 lambat, dan keluhannya baru muncul setelah data menumpuk di produksi.
+Kelemahan kedua: halaman yang bergeser Yang ini lebih berbahaya karena tidak tampak sebagai kelambatan, melainkan sebagai data yang salah. Perhatikan urutan kejadian berikut -- ini bukan ilustrasi, melainkan keluaran yang benar-benar diamati:
+T1 client mengambil halaman 1 (OFFSET 0) -> user1, user2, user3, user4, user5
+T2 satu baris baru masuk di posisi paling atas
+T3 client mengambil halaman 2 (OFFSET 5) -> user5, user6, user7, user8, user9 ^^^^^ sudah pernah dikirim pada halaman 1
+Penyisipan satu baris menggeser seluruh data satu posisi ke bawah, sehingga user5 terkirim dua kali. Pada penghapusan yang terjadi sebaliknya: satu baris melompati jendela halaman dan tidak pernah terkirim sama sekali. Tidak ada pesan kesalahan, tidak ada yang gagal -- client hanya menerima daftar yang keliru dan tidak punya cara untuk mengetahuinya.
+A.5 Keyset Pagination Gagasannya: jangan menghitung "lewati 20 baris", melainkan menyebut "mulai setelah baris INI". Penanda posisinya disebut cursor.
+-- offset: posisi dihitung dari awal, ikut bergeser bila data berubah SELECT * FROM users ORDER BY created_at DESC, id DESC LIMIT 10 OFFSET 20;
+-- keyset: posisi ditambatkan pada nilai baris terakhir, tidak bergeser SELECT * FROM users WHERE (created_at, id) < ('2026-09-13 14:12:40', 8) ORDER BY created_at DESC, id DESC LIMIT 10;
+Mengapa dua column, bukan satu created_at tidak dijamin unik: dua baris dapat dibuat pada mikrodetik yang sama. Bila hanya created_at yang dibandingkan, kedua baris itu akan saling menutupi -- salah satunya terlewat, atau justru terkirim dua kali. Karena itu cursor selalu menyertakan pemecah seri yang pasti unik, yaitu primary key.
+Perbandingan baris Bentuk (created_at, id) < ($1, $2) disebut row value comparison. PostgreSQL membandingkan pasangan itu secara leksikografis, persis seperti ORDER BY created_at DESC, id DESC mengurutkannya. Bentuk ini setara dengan:
+created_at < $1 OR (created_at = $1 AND id < $2)
+tetapi lebih pendek, lebih sulit ditulis salah, dan -- yang terpenting -- dapat langsung memakai index gabungan, sedangkan bentuk OR sering tidak.
+
+Keyset pagination bukan pengganti yang selalu unggul Ada tiga hal yang hilang dan tidak dapat dikembalikan: tidak dapat melompat ke halaman ke-50, tidak dapat menampilkan "halaman 3 dari 120", dan urutan tidak dapat diganti bebas oleh client karena cursor hanya bermakna terhadap satu urutan tertentu.
+Karena itu pilihannya ditentukan oleh bentuk antarmukanya. Daftar yang digulir terus ke bawah (timeline, notifikasi, feed) cocok memakai cursor. Tabel administrasi dengan nomor halaman yang dapat diklik tetap lebih jujur memakai offset. Menukar keduanya tanpa alasan hanya memindahkan masalah.
+
+A.6 Content Negotiation Satu resource dapat disajikan dalam beberapa bentuk. Yang memilih adalah client, lewat header Accept.
+
+Header Content-Type Accept
+
+Dikirim oleh Pengirim body Peminta
+
+Artinya
+
+Bila tidak dapat dipenuhi
+
+Format data yang SEDANG SAYA KIRIM 415 Unsupported Media Type
+
+Format yang SAYA INGINKAN sebagai balasan
+
+406 Not Acceptable
+
+Keduanya sering tertukar karena isinya sama-sama berupa nama media type. Cara membedakannya: Content-Type menjelaskan apa yang ada di tangan pengirim, Accept menjelaskan apa yang diinginkan penerima. Sebuah request GET tidak punya body, jadi ia tidak perlu Content-Type sama sekali -- tetapi tetap boleh menyebut Accept.
+Satu nilai perlu diperlakukan khusus: */* berarti "terserah server", dan hampir semua tool baris perintah mengirimkannya secara otomatis. Header Accept yang kosong bermakna sama. Keduanya harus dijawab dengan format bawaan, bukan dengan 406.
+
+A.7 Error Handling Terpusat Sampai Modul 6, setiap handler membentuk response kegagalannya sendiri. Mulai sekarang handler hanya MENGEMBALIKAN error, dan satu ErrorHandler-lah yang mengubahnya menjadi response.
+// sebelumnya -- handler tahu tentang HTTP dan menulis response sendiri return helper.Fail(c, fiber.StatusNotFound, "user tidak ditemukan")
+// sekarang -- handler hanya menyatakan APA yang salah return helper.NotFound("user tidak ditemukan")
+Pemusatan ini membawa empat keuntungan yang tidak dapat dicapai dengan disiplin semata:
+· Bentuk response kegagalan dijamin seragam. Tidak mungkin ada satu endpoint yang membalas dengan susunan field berbeda, karena hanya ada satu tempat yang menuliskannya.
+· Pencatatan log tidak dapat terlewat. Tidak ada jalur lain yang dapat dilalui sebuah error. · Detail teknis tidak dapat bocor. Pesan asli dari database disimpan pada field cause yang hanya masuk
+ke log; yang dikirim ke client hanyalah kalimat yang memang ditulis untuk dibaca manusia. · Service menjadi lebih mudah diuji. Fungsi yang mengembalikan error dapat diperiksa nilai
+kembaliannya secara langsung, tanpa perlu menjalankan server HTTP.
+
+A.8 Kode Error dan request_id
+Response kegagalan kita kini memuat dua field yang sebelumnya tidak ada, dan keduanya ada untuk alasan yang sangat praktis.
+
+Field code
+message request_id
+
+Untuk siapa
+Mesin. Client menulis percabangan berdasarkan nilainya
+Manusia. Ditampilkan apa adanya di antarmuka
+Pengembang. Menghubungkan satu keluhan dengan satu baris log
+
+Boleh berubah? Tidak -- ia bagian dari kontrak API
+Ya, kapan saja Berbeda pada setiap request
+
+Tanpa code, client terpaksa mencocokkan teks pesan -- dan perbaikan ejaan pada pesan akan merusak aplikasi client tanpa peringatan. Tanpa request_id, laporan "tadi pagi saya dapat error" hanya dapat ditelusuri dengan menebak.
+
+Perubahan bentuk response adalah breaking change Bentuk response kegagalan kita berubah: field "errors" menjadi "fields", dan muncul "code" serta "request_id". Client mana pun yang sudah membaca bentuk lama akan rusak.
+Pada mata kuliah ini hal itu tidak menjadi masalah karena belum ada client sungguhan. Di dunia nyata, perubahan semacam ini dilakukan lewat versi baru (/api/v2) sementara /api/v1 tetap dilayani sampai seluruh client berpindah. Itulah alasan sebenarnya mengapa URL kita sejak awal memuat /v1 -- bukan sekadar mengikuti kebiasaan.
+
+B. Langkah Panduan
+Lanjutkan proyek latihan-fiber dari Modul 6. Satu dependency baru:
+go get github.com/go-playground/validator/v10
+Urutan langkah di bawah disusun agar proyek tetap dapat dikompilasi di setiap titik. Mendahulukan validasi sebelum error handling akan membuat proyek Anda rusak di tengah jalan, karena helper.Validation belum ada.
+
+B.0 Cara Berburu Kesalahan
+Sebelum mulai, pahami dulu urutan kerjanya. Menebak-nebak sambil membaca ulang kode adalah cara paling lambat dan paling melelahkan. Yang berikut ini jauh lebih cepat.
+
+Urutan
+1. Dengarkan compiler
+
+Yang dikerjakan
+Jalankan go build ./... dan baca pesannya sampai selesai, termasuk nomor baris
+
+Mengapa didahulukan
+Compiler menunjuk lokasi persis. Tiga kesalahan akan tumbang di sini tanpa Anda perlu berpikir keras
+
+Urutan
+
+Yang dikerjakan
+
+Mengapa didahulukan
+
+2. Bandingkan Baca komentar di atas setiap blok, lalu
+
+komentar
+
+periksa apakah kode di bawahnya benar-
+
+dengan kodenya benar melakukan itu
+
+Komentar pada modul ini dijamin benar. Kode yang bertentangan dengan komentarnya adalah tersangka utama
+
+3. Bandingkan Bagian A menyebut arah urutan, status code, Teori dan kode yang berbeda berarti salah
+
+Bagian B dengan dan aturan tertentu. Periksa apakah kode satunya salah -- dan yang salah selalu kodenya
+
+Bagian A
+
+menuruti
+
+4. Uji terhadap Jalankan setiap perintah pada Spesifikasi
+
+Bagian C
+
+Penerimaan, bandingkan hasilnya
+
+Enam kesalahan sisanya hanya terlihat dari perilaku, bukan dari membaca kode
+
+5. Persempit satu per satu
+
+Ketika hasilnya berbeda, telusuri mundur: Membedakan "salah di query" dari "salah di response salah, atau data dari database yang handler" memangkas separuh kemungkinan sudah salah?
+
+Satu nasihat yang menghemat banyak waktu: perbaiki SATU kesalahan, lalu uji ulang, baru lanjut ke berikutnya. Memperbaiki empat hal sekaligus lalu mendapati hasilnya masih salah membuat Anda tidak tahu perbaikan mana yang berhasil dan mana yang justru menambah masalah baru.
+Catat setiap temuan saat itu juga: lokasi, gejala, akar masalah, perbaikan. Catatan itulah isi laporan Anda, dan jauh lebih mudah ditulis sekarang daripada diingat-ingat nanti malam.
+
+LANGKAH 1 -- AppError -- Satu Bentuk Kegagalan untuk Seluruh Aplikasi
+
+ helper/errors.go
+package helper
+
+import ( "fmt"
+
+"github.com/gofiber/fiber/v2" )
+
+// Kode error yang stabil dan dapat dibaca mesin.
+
+//
+
+// Message boleh berubah kapan saja -- ia ditulis untuk manusia.
+
+// Code TIDAK boleh berubah -- ia bagian dari kontrak API, karena client
+
+// menuliskan percabangan berdasarkan nilainya.
+
+const (
+
+CodeValidation
+
+= "VALIDATION_ERROR"
+
+CodeBadRequest
+
+= "BAD_REQUEST"
+
+CodeUnauthorized
+
+= "UNAUTHORIZED"
+
+CodeForbidden
+
+= "FORBIDDEN"
+
+CodeNotFound
+
+= "NOT_FOUND"
+
+CodeConflict
+
+= "CONFLICT"
+
+CodeUnsupportedMedia = "UNSUPPORTED_MEDIA_TYPE"
+
+CodeNotAcceptable = "NOT_ACCEPTABLE"
+
+CodeTooManyRequests = "TOO_MANY_REQUESTS"
+
+CodeInternal
+
+= "INTERNAL_ERROR"
+
+)
+
+// AppError adalah satu-satunya bentuk kegagalan yang dikenal aplikasi ini.
+
+//
+
+// Perhatikan bahwa ia TIDAK menyentuh fiber.Ctx. Sebuah error hanya
+
+// menggambarkan apa yang salah; urusan menuliskannya sebagai response
+
+// diserahkan sepenuhnya kepada ErrorHandler terpusat.
+
+type AppError struct {
+
+Status int
+
+// status HTTP yang akan dikirim
+
+Code string
+
+// kode stabil untuk client
+
+Message string
+
+// penjelasan untuk manusia
+
+Fields map[string]string // detail per-field, khusus kegagalan validasi
+
+cause error
+
+// error asli, untuk log -- tidak pernah dikirim
+
+}
+
+func (e *AppError) Error() string { if e.cause != nil { return fmt.Sprintf("%s: %s: %v", e.Code, e.Message, e.cause) } return fmt.Sprintf("%s: %s", e.Code, e.Message)
+}
+
+// Unwrap membuat errors.Is dan errors.As tetap dapat menembus AppError // untuk menemukan error asli di bawahnya. func (e *AppError) Unwrap() error { return e.cause }
+
+func BadRequest(message string) *AppError { return &AppError{Status: fiber.StatusBadRequest, Code: CodeBadRequest, Message: message}
+}
+
+func Unauthorized(message string) *AppError { return &AppError{Status: fiber.StatusUnauthorized, Code: CodeUnauthorized, Message: message}
+}
+
+func Forbidden(message string) *AppError { return &AppError{Status: fiber.StatusForbidden, Code: CodeForbidden, Message: message}
+}
+
+func NotFound(message string) *AppError { return &AppError{Status: fiber.StatusNotFound, Code: CodeNotFound, Message: message}
+}
+
+func Conflict(message string) *AppError { return &AppError{Status: fiber.StatusConflict, Code: CodeConflict, Message: message}
+}
+
+func Validation(fields map[string]string) *AppError { return &AppError{ Status: fiber.StatusBadRequest, Code: CodeValidation, Message: "validasi gagal", Fields: fields, }
+}
+
+func NotAcceptable(message string) *AppError { return &AppError{ Status: fiber.StatusNotAcceptable, Code: CodeNotAcceptable, Message: message, }
+}
+
+// Internal sengaja memakai pesan yang seragam dan tidak informatif. // Detail teknisnya disimpan pada cause dan hanya muncul di log, karena // pesan error database sering membocorkan nama tabel dan struktur query. func Internal(cause error) *AppError {
+return &AppError{ Status: fiber.StatusInternalServerError, Code: CodeInternal, Message: "terjadi kesalahan pada server", cause: cause,
+} }
+
+Lengkapi sendiri UnsupportedMediaType, TooManyRequests, dan ServiceUnavailable mengikuti pola yang sama.
+
+Perhatikan huruf kecil pada cause. Field yang diawali huruf kecil tidak dapat diakses dari package lain, sehingga tidak ada handler mana pun yang dapat secara tidak sengaja mengirimkan isinya ke client. Pengamanan itu dijamin compiler, bukan oleh kedisiplinan penulisnya.
+
+ app/model/user.go -- bentuk response kegagalan
+
+type ErrorResponse struct {
+
+Success bool
+
+`json:"success"`
+
+Code
+
+string
+
+`json:"code"`
+
+Message string
+
+`json:"message"`
+
+Fields map[string]string `json:"fields,omitempty"`
+
+RequestID string
+
+`json:"request_id,omitempty"`
+
+}
+
+LANGKAH 2 -- ErrorHandler Terpusat
+
+ config/app.go
+// newErrorHandler adalah SATU-SATUNYA tempat error berubah menjadi // response HTTP di seluruh aplikasi. func newErrorHandler(logger *slog.Logger) fiber.ErrorHandler {
+return func(c *fiber.Ctx, err error) error { requestID := helper.RequestID(c)
+
+var appErr *helper.AppError
+
+switch { case errors.As(err, &appErr):
+// Kegagalan yang sudah kita rencanakan.
+
+case errors.Is(err, fiber.ErrRequestEntityTooLarge): appErr = &helper.AppError{ Status: fiber.StatusRequestEntityTooLarge, Code: "PAYLOAD_TOO_LARGE", Message: "ukuran body melebihi batas yang diizinkan", }
+
+default: // Kegagalan yang tidak kita duga. var fiberErr *fiber.Error if errors.As(err, &fiberErr) { appErr = &helper.AppError{ Status: fiberErr.Code, Code: "HTTP_ERROR", Message: fiberErr.Message, } } else { appErr = helper.Internal(err) }
+}
+
+// Hanya kegagalan sisi server yang dicatat sebagai Error. // Kegagalan 4xx adalah kesalahan pemakai API, bukan kerusakan // sistem; mencatatnya sebagai Error membuat log penuh bising // sehingga kerusakan yang sesungguhnya justru tenggelam. if appErr.Status < fiber.StatusInternalServerError {
+logger.Error("request_failed", slog.String("request_id", requestID), slog.String("path", c.Path()), slog.String("code", appErr.Code), slog.Int("status", appErr.Status), slog.String("error", appErr.cause.Error()))
+} else { logger.Warn("request_rejected", slog.String("request_id", requestID), slog.String("path", c.Path()), slog.String("code", appErr.Code), slog.Int("status", appErr.Status))
+}
+
+return c.Status(appErr.Status).JSON(model.ErrorResponse{
+
+Success: false,
+
+Code:
+
+appErr.Code,
+
+Message: appErr.Message,
+
+Fields: appErr.Fields,
+
+RequestID: requestID,
+
+})
+
+} }
+Ubah pula penangan route yang tidak dikenal agar ikut melewati jalur yang sama:
+app.Use(func(c *fiber.Ctx) error { return helper.NotFound("endpoint tidak ditemukan")
+})
+Satu bug yang muncul justru karena perubahan ini Setelah handler berhenti menulis response sendiri, RequestLogger mulai mencatat status yang salah: setiap kegagalan tercatat sebagai 200. Sebabnya masuk akal begitu disadari. RequestLogger membaca c.Response().StatusCode() sesaat setelah c.Next() selesai -- padahal pada titik itu ErrorHandler BELUM berjalan, sehingga status pada response masih bernilai bawaan. Log menjadi menyesatkan tepat pada request yang paling perlu ditelusuri. Ini contoh nyata bahwa perbaikan arsitektur dapat merusak bagian lain yang tampak tidak berhubungan. Perbaikannya ada pada Langkah 3.
+LANGKAH 3 -- Memperbaiki Status pada Access Log
+ middleware/middleware.go -- RequestLogger
+start := time.Now() err := c.Next() requestID, _ := c.Locals("requestid").(string)
+// Sejak handler mengembalikan error alih-alih menulis response sendiri, // status pada c.Response() BELUM terisi ketika baris ini dijalankan: // ErrorHandler baru berjalan setelah seluruh rangkaian middleware selesai. // Tanpa koreksi di bawah, setiap kegagalan tercatat sebagai 200. status := c.Response().StatusCode() if err != nil {
+var appErr *helper.AppError if errors.As(err, &appErr) {
+status = appErr.Status } else {
+status = fiber.StatusInternalServerError } }
+attrs := []any{ slog.String("request_id", requestID), slog.String("method", c.Method()), slog.String("path", c.Path()), slog.Int("status", c.Response().StatusCode()), slog.Duration("duration", time.Since(start)), slog.String("ip", c.IP()),
+}
+Setelah diperbaiki, satu kegagalan meninggalkan dua baris log yang saling melengkapi dan terikat oleh request_id yang sama:
+{"level":"INFO","msg":"http_request","request_id":"10338117-...", "method":"GET","path":"/api/v1/users/999999","status":404, "user_id":1,"role":"admin"}
+{"level":"WARN","msg":"request_rejected","request_id":"10338117-...", "path":"/api/v1/users/999999","code":"NOT_FOUND","status":404}
+
+LANGKAH 4 -- Service Mengembalikan Error, Bukan Response
+Ubah seluruh method pada service mengikuti pola berikut:
+ app/service/user_service.go
+func (s *UserService) Get(c *fiber.Ctx) error { ctx, cancel := helper.RequestContext(c) defer cancel()
+current, ok := helper.CurrentUser(c) if !ok {
+return helper.Unauthorized("belum terautentikasi") }
+id, valid := helper.ParamID(c) if !valid {
+return helper.BadRequest("id harus berupa angka positif") }
+if !CanAccessUser(current, id, s.perms, "user:read:any") { return helper.Forbidden("tidak berhak mengakses data user lain")
+}
+user, err := s.repo.FindByID(ctx, id) if err != nil {
+return translateError(err, "user") }
+return helper.Success(c, fiber.StatusOK, "user ditemukan", user) }
+// translateError mengubah error milik repository menjadi AppError. // // Perhatikan tanda tangannya: tidak ada fiber.Ctx. Fungsi ini hanya // menerjemahkan satu jenis error menjadi jenis lain, dan tidak tahu // apa pun tentang HTTP. Yang tidak dikenali menjadi Internal -- fail // closed: lebih baik membalas 500 daripada menebak-nebak status. func translateError(err error, entity string) error {
+switch { case errors.Is(err, repository.ErrNotFound):
+return helper.NotFound(entity + " tidak ditemukan") case errors.Is(err, repository.ErrDuplicate):
+return helper.Conflict("username sudah dipakai") default:
+return nil } }
+Hapus helper.Fail dan helper.FailValidation seluruhnya. Selama keduanya masih ada, akan selalu ada godaan memakainya -- dan satu pemakaian saja sudah cukup untuk membuat bentuk response tidak lagi seragam. Menghapusnya membuat compiler yang menegakkan aturan ini, bukan ingatan Anda.
+Terapkan hal yang sama pada middleware/auth.go, middleware/authz.go, middleware/middleware.go, dan auth_service.go.
+LANGKAH 5 -- Validasi Deklaratif
+ helper/validator.go
+package helper
+import ( "errors" "reflect" "strings" "unicode"
+
+"github.com/go-playground/validator/v10" )
+// validate dibuat SEKALI untuk seluruh aplikasi. // // validator.New() melakukan refleksi dan menyimpan hasilnya dalam cache // internal. Membuatnya ulang pada setiap request berarti membuang cache // tersebut berkali-kali -- mahal dan tidak ada gunanya. var validate = newValidator()
+func newValidator() *validator.Validate { v := validator.New()
+// Tanpa ini, pesan error menyebut nama field Go ("Username"), // padahal client mengirim dan membaca nama JSON ("username"). v.RegisterTagNameFunc(func(field reflect.StructField) string {
+name := strings.SplitN(field.Tag.Get("json"), ",", 2)[0] if name == "" || name == "-" {
+return field.Name } return name })
+// Aturan buatan sendiri. Aturan yang tidak disediakan library tetap // ditulis secara deklaratif sebagai tag, bukan dikembalikan menjadi // pemeriksaan manual yang tersebar di dalam service. _ = v.RegisterValidation("nospace", func(fl validator.FieldLevel) bool {
+return !strings.ContainsAny(fl.Field().String(), " \t\n\r") }) _ = v.RegisterValidation("username", func(fl validator.FieldLevel) bool {
+for _, r := range fl.Field().String() { if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '.' && r != '_' { return false }
+} return true }) _ = v.RegisterValidation("strongpassword", func(fl validator.FieldLevel) bool { return passwordStrength(fl.Field().String()) != "" })
+return v }
+// ValidateStruct menjalankan seluruh aturan pada tag struct dan // mengembalikan peta nama field ke pesan berbahasa Indonesia. // Mengembalikan nil berarti tidak ada pelanggaran. func ValidateStruct(s any) map[string]string {
+err := validate.Struct(s) if err == nil {
+return nil }
+// Terjadi bila yang dikirim bukan struct -- itu kesalahan programmer, // bukan kesalahan pemakai API. Jangan diam-diam dianggap valid. var invalid *validator.InvalidValidationError if errors.As(err, &invalid) {
+return map[string]string{"_": "objek yang divalidasi tidak sah"} }
+var fieldErrors validator.ValidationErrors if !errors.As(err, &fieldErrors) {
+return map[string]string{"_": "validasi gagal"} }
+result := make(map[string]string, len(fieldErrors)) for _, fe := range fieldErrors {
+if _, exists := result[fe.Field()]; !exists { result[fe.Field()] = messageFor(fe)
+}
+
+} return result }
+ helper/validator.go -- penerjemah pesan
+// messageFor menerjemahkan nama tag menjadi kalimat yang dapat dibaca // pemakai. Daftar ini terpusat: menambah satu tag baru cukup menambah // satu case di sini, tidak menyebar ke banyak file. func messageFor(fe validator.FieldError) string {
+switch fe.Tag() { case "required":
+return "wajib diisi" case "email":
+return "format email tidak valid" case "min":
+if fe.Kind() == reflect.String { return "minimal " + fe.Param() + " karakter"
+} return "nilai minimal " + fe.Param() case "max": if fe.Kind() == reflect.String {
+return "maksimal " + fe.Param() + " karakter" } return "nilai maksimal " + fe.Param() case "alphanum": return "hanya boleh berisi huruf dan angka" case "nospace": return "tidak boleh mengandung spasi" case "username": return "hanya boleh huruf, angka, titik, dan garis bawah" case "strongpassword": // Type assertion memakai bentuk DUA nilai, bukan satu. Bentuk // satu nilai akan panic bila suatu saat tag ini terpasang pada // field bukan string -- mematikan server hanya karena salah tag. if value, ok := fe.Value().(string); ok {
+return passwordStrength(value) } return "password tidak memenuhi syarat" case "oneof": return "harus salah satu dari: " +
+strings.ReplaceAll(fe.Param(), " ", ", ") default:
+// Jaring pengaman. Bila muncul di log, artinya ada tag yang // dipakai tetapi belum diterjemahkan di sini. return "tidak memenuhi aturan " + fe.Tag() } }
+Fungsi passwordStrength dipindahkan apa adanya dari auth_rules.go milik Modul 5. Ia tetap berupa fungsi
+biasa, bukan sepenuhnya tag, karena sebuah tag hanya mampu menjawab benar atau salah -- padahal
+"minimal 8 karakter" dan "password terlalu umum" menuntut tindakan yang berbeda dari pemakainya.
+
+LANGKAH 6 -- Memindahkan Aturan ke Tag dan Menghapus Validasi Manual
+
+ app/model/user.go
+// Mulai pertemuan ini, aturan validasi ditulis sebagai tag pada struct. // Aturan dan bentuk data berada pada baris yang sama, sehingga menambah // satu field tanpa aturannya menjadi kelalaian yang langsung terlihat. type CreateUserRequest struct {
+Username string `json:"username" validate:"required,min=3,max=30,alphanum"` Email string `json:"email" validate:"required,email,max=120"` Password string `json:"password" validate:"required,min=8,max=72,nospace"` }
+
+type ReplaceUserRequest struct {
+
+Username string `json:"username" validate:"required,min=3,max=30,alphanum"`
+
+Email string `json:"email"
+
+validate:"required,email,max=120"`
+
+IsActive bool `json:"is_active"` }
+
+// Pada PATCH, pointer membedakan "tidak dikirim" (nil) dari "dikirim
+
+// bernilai kosong". omitnil dipilih karena ia menyatakan maksud yang
+
+// sebenarnya: lewati hanya bila nil.
+
+type PatchUserRequest struct {
+
+Username string `json:"username,omitempty" validate:"omitnil,min=3,max=30,alphanum"`
+
+Email *string `json:"email,omitempty"
+
+validate:"omitnil,email,max=120"`
+
+IsActive *bool `json:"is_active,omitempty"`
+
+}
+
+ app/model/auth.go
+type RegisterRequest struct { Username string `json:"username" validate:"required,min=3,max=30,username"` Email string `json:"email" validate:"required,email,max=120"` Password string `json:"password" validate:"required,max=72,strongpassword"`
+}
+Perhatikan max=72 pada password. Angka itu bukan pilihan bebas: bcrypt hanya memproses 72 byte pertama dan MENGABAIKAN sisanya tanpa peringatan. Tanpa batas ini, dua password berbeda yang sama pada 72 byte pertama akan dianggap identik saat login.
+
+Menyederhanakan service
+// sebelumnya if errs := ValidateCreate(req); len(errs) > 0 {
+return helper.FailValidation(c, errs) }
+// sekarang if errs := helper.ValidateStruct(req); errs != nil {
+return helper.Validation(errs) }
+Setelah itu HAPUS ValidateCreate, ValidateReplace, isValidEmail, dan seluruh isi auth_rules.go. Yang
+tersisa di user_rules.go hanyalah aturan yang memang tidak dapat dinyatakan sebagai tag:
+// ApplyPatch tidak lagi mengembalikan daftar error. Pemeriksaan bentuk // sudah selesai dikerjakan tag sebelum fungsi ini dipanggil, sehingga di // sini tugasnya tinggal satu: menggabungkan. func ApplyPatch(current model.User, req model.PatchUserRequest) model.User {
+if req.Username != nil { current.Username = strings.TrimSpace(*req.Username)
+} if req.Email != nil {
+current.Email = strings.TrimSpace(*req.Email) } if req.IsActive != nil {
+current.IsActive = *req.IsActive } return current }
+// IsEmptyPatch memeriksa body PATCH yang tidak berisi field apa pun. // // Aturan ini tidak dapat ditulis sebagai tag: tag memeriksa satu field // pada satu waktu, sedangkan aturan ini berbicara tentang HUBUNGAN antar // field -- setidaknya satu di antara mereka harus ada. func IsEmptyPatch(req model.PatchUserRequest) bool {
+return req.Username == nil && req.Email == nil && req.IsActive == nil }
+
+Eksplorasi sendiri ? Bandingkan jumlah baris user_rules.go sebelum dan sesudah langkah ini. Apakah seluruh baris yang hilang
+benar-benar digantikan tag, atau ada aturan yang diam-diam ikut hilang?
+? Tambahkan field baru pada CreateUserRequest tanpa memberinya tag validate. Apa yang terjadi? Bandingkan dengan menambah field pada versi lama yang memakai ValidateCreate.
+LANGKAH 7 -- Cursor Pagination
+ migrations/004_cursor_index.sql
+-- Urutan column pada index HARUS sama persis dengan ORDER BY pada -- query, termasuk arah DESC-nya. Bila tidak, PostgreSQL tetap dapat -- memakai index untuk sebagian kasus, tetapi tidak dapat memakainya -- untuk melompat langsung ke posisi cursor -- dan seluruh keuntungan -- keyset pagination hilang tanpa satu pun pesan kesalahan. CREATE INDEX IF NOT EXISTS users_created_at_id_desc_idx
+ON users (created_at DESC, id DESC);
+ helper/cursor.go
+// EncodeCursor mengubah penanda menjadi satu string yang aman di URL. // // base64 dipakai agar bentuk internalnya dapat kita ubah tanpa mengubah // kontrak API. Perlu ditegaskan: base64 adalah PENGKODEAN, bukan // enkripsi. Siapa pun dapat membacanya, dan siapa pun dapat menyusun // cursor palsu. Karena itu cursor tidak boleh memuat apa pun yang // bersifat rahasia atau yang dipercaya sebagai dasar hak akses. func EncodeCursor(createdAt time.Time, id int) string {
+raw := strconv.FormatInt(createdAt.UTC().UnixNano(), 10) + "|" + strconv.Itoa(id)
+return base64.RawURLEncoding.EncodeToString([]byte(raw)) }
+// DecodeCursor membaca kembali penanda dari string. // // Seluruh jalur kegagalan mengembalikan error, tidak ada yang "diperbaiki // diam-diam". Cursor rusak berarti permintaan client memang salah, dan // client berhak tahu itu lewat 400 -- bukan diam-diam dikembalikan ke // halaman pertama seolah tidak terjadi apa-apa. func DecodeCursor(encoded string) (model.Cursor, error) {
+if strings.TrimSpace(encoded) == "" { return model.Cursor{}, ErrInvalidCursor
+}
+decoded, err := base64.RawURLEncoding.DecodeString(encoded) if err != nil {
+return model.Cursor{}, ErrInvalidCursor }
+parts := strings.Split(string(decoded), "|") if len(parts) != 2 {
+return model.Cursor{}, ErrInvalidCursor }
+nanos, err := strconv.ParseInt(parts[0], 10, 64) if err != nil {
+return model.Cursor{}, ErrInvalidCursor }
+id, err := strconv.Atoi(parts[1]) if err != nil || id < 1 {
+return model.Cursor{}, ErrInvalidCursor }
+return model.Cursor{CreatedAt: time.Unix(0, nanos).UTC(), ID: id}, nil }
+
+ app/repository/user_repository.go
+// FindAfterCursor mengambil satu halaman memakai keyset pagination. // // id ikut dibandingkan karena created_at TIDAK dijamin unik. Bila dua // baris dibuat pada mikrodetik yang sama dan hanya created_at yang // dibandingkan, salah satu baris akan terlewat atau terkirim dua kali. // // Jumlah yang diminta sengaja limit+1. Baris tambahan itu tidak dikirim // ke client; keberadaannya hanya dipakai untuk menjawab "masih ada // halaman berikutnya?" tanpa perlu COUNT(*) atas seluruh tabel. func (r *userPostgresRepository) FindAfterCursor(
+ctx context.Context, q model.CursorQuery, ) ([]model.User, error) {
+args := []any{} where := " WHERE 1 = 1"
+if q.Search != "" { args = append(args, "%"+q.Search+"%") where += fmt.Sprintf(" AND username ILIKE $%d", len(args))
+} if q.IsActive != nil {
+args = append(args, *q.IsActive) where += fmt.Sprintf(" AND is_active = $%d", len(args)) } if q.After != nil { args = append(args, q.After.CreatedAt, q.After.ID) where += fmt.Sprintf(" AND (created_at, id) < ($%d, $%d)",
+len(args)-1, len(args)) }
+args = append(args, q.Limit+1) query := fmt.Sprintf(
+"SELECT %s FROM users%s ORDER BY created_at ASC, id ASC LIMIT $%d", userColumns, where, len(args))
+rows, err := r.pool.Query(ctx, query, args...) if err != nil {
+return nil, fmt.Errorf("mengambil daftar user: %w", err) } defer rows.Close()
+result := []model.User{} for rows.Next() {
+u, err := scanUser(rows) if err != nil {
+return nil, fmt.Errorf("membaca row user: %w", err) } result = append(result, u) } if err := rows.Err(); err != nil { return nil, fmt.Errorf("membaca hasil query: %w", err) } return result, nil }
+Nomor parameter tetap disusun secara dinamis dengan len(args), bukan dirangkai sebagai teks berisi nilai.
+Ini pelajaran Modul 3 yang tidak boleh dilonggarkan sedikit pun: yang boleh dirangkai hanyalah NOMOR
+parameter, nilainya selalu dikirim terpisah. Satu pengecualian saja sudah cukup untuk membuka pintu SQL
+injection.
+ app/model/user.go -- bentuk meta yang berbeda
+// CursorMeta menggantikan Meta pada endpoint yang memakai cursor. // // Perhatikan tidak adanya Total dan TotalPages. Keduanya tidak dapat // disediakan tanpa COUNT(*) atas seluruh tabel -- persis biaya yang ingin
+
+// dihindari oleh pagination berbasis cursor.
+
+type CursorMeta struct {
+
+Limit
+
+int `json:"limit"`
+
+NextCursor string `json:"next_cursor,omitempty"`
+
+HasMore bool `json:"has_more"`
+
+}
+
+ app/service/user_service.go -- method List
+rows, err := s.repo.FindAfterCursor(ctx, q) if err != nil {
+return helper.Internal(err) }
+// Baris tambahan hasil limit+1 dipotong di sini. Ia hanya penanda bahwa // masih ada halaman berikutnya, bukan bagian dari halaman ini. hasMore := len(rows) > q.Limit if hasMore {
+rows = rows[:q.Limit] }
+meta := &model.CursorMeta{Limit: q.Limit, HasMore: hasMore} if hasMore && len(rows) > 0 {
+last := rows[len(rows)-1] meta.NextCursor = helper.EncodeCursor(last.CreatedAt, last.ID) }
+return helper.SuccessCursor(c, "daftar user berhasil diambil", rows, meta)
+
+LANGKAH 8 -- Content Negotiation
+ helper/negotiate.go
+const ( FormatJSON = fiber.MIMEApplicationJSON FormatCSV = "text/csv"
+)
+// Negotiate memilih format response berdasarkan header Accept. // // Perbedaan yang wajib jelas: // - Content-Type menjelaskan format yang SEDANG DIKIRIM pengirim. // - Accept menjelaskan format yang DIINGINKAN penerima sebagai balasan. func Negotiate(c *fiber.Ctx, offered ...string) (string, error) {
+accept := strings.TrimSpace(c.Get(fiber.HeaderAccept))
+// Tidak menyebut Accept sama sekali berarti "terserah server". // Demikian pula Accept: */* yang dikirim hampir semua tool CLI. if accept == "" {
+return offered[0], nil }
+chosen := c.Accepts(offered...) if chosen == "" {
+return "", NotAcceptable( "format yang diminta tidak tersedia, pilih salah satu dari: " + strings.Join(offered, ", "))
+}
+return chosen, nil }
+// WriteUsersCSV menuliskan daftar user sebagai CSV. // // Header Content-Disposition membuat browser menawarkan unduhan alih-alih // menampilkan isinya sebagai teks mentah. func WriteUsersCSV(c *fiber.Ctx, users []model.User) error {
+c.Set(fiber.HeaderContentType, FormatCSV+"; charset=utf-8") c.Set(fiber.HeaderContentDisposition, `attachment; filename="users.csv"`)
+
+var buffer strings.Builder writer := csv.NewWriter(&buffer)
+header := []string{"id", "username", "email", "role", "is_active", "created_at"} if err := writer.Write(header); err != nil {
+return Internal(err) }
+for _, u := range users { row := []string{ strconv.Itoa(u.ID), u.Username, u.Email, u.Role, strconv.FormatBool(u.IsActive), u.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"), } if err := writer.Write(row); err != nil { return Internal(err) }
+}
+if err := writer.Error(); err != nil { return Internal(err)
+}
+return c.SendString(buffer.String()) }
+ app/service/user_service.go -- awal method List
+// Format dipilih SEBELUM query dijalankan. Bila client meminta format // yang tidak dapat kita hasilkan, tidak ada gunanya membebani database // untuk hasil yang akan dibuang. format, err := helper.Negotiate(c, helper.FormatJSON, helper.FormatCSV) if err != nil {
+return err }
+q, err := helper.ParseCursorQuery(c) if err != nil {
+return err }
+// ... pengambilan data ...
+if format == helper.FormatCSV { return helper.WriteUsersCSV(c, rows)
+}
+Mengapa encoding/csv, bukan merangkai string sendiri Menyusun CSV dengan strings.Join tampak sepele sampai sebuah nilai mengandung koma, tanda kutip, atau baris baru. Saat itu terjadi, jumlah kolom berubah dan seluruh berkas menjadi rusak -- sering tanpa disadari sampai ada yang membukanya di Excel. Paket encoding/csv menangani seluruh kasus tersebut sesuai RFC 4180. Ini contoh umum: bagian yang terlihat paling mudah ditulis sendiri justru bagian yang paling banyak kasus tepinya.
+C. Spesifikasi Penerimaan
+Inilah SASARAN yang harus dicapai kode Anda setelah seluruh kesalahan diperbaiki. Seluruh keluaran di bawah adalah hasil yang benar-benar diamati pada versi yang sudah benar, bukan perkiraan. Selama hasil pada komputer Anda berbeda dari yang tertulis di sini, masih ada kesalahan yang belum ditemukan.
+
+Kerjakan bagian ini sambil membuka terminal. Setiap butir di bawah adalah satu pengujian yang dapat dijalankan langsung.
+
+9.1 Cursor pagination
+curl "localhost:3000/api/v1/users?limit=5" -H "Authorization: Bearer $TOKEN"
+
+halaman 1 -> user1, user2, user3, user4, user5
+
+meta
+
+-> {"limit":5,"next_cursor":"MTc4OTMwODUyMDM2MDg3NDAwMHw4",
+
+"has_more":true}
+
+# isi cursor dapat dibaca siapa pun -- base64 bukan enkripsi echo MTc4OTMwODUyMDM2MDg3NDAwMHw4 | base64 -d -> 1789308520360874000|8
+
+curl "localhost:3000/api/v1/users?limit=5&cursor=MTc4OTMwODUyMDM2MDg3NDAwMHw4" ... halaman 2 -> user6, user7, user8, user9, user10
+
+halaman 3 -> user11, user12, biasa, staff, admin
+
+meta
+
+-> {"limit":5,"has_more":false}
+
+<- tanpa next_cursor
+
+9.2 Pengujian yang membuktikan alasan pindah ke cursor
+Ambil halaman 1, sisipkan satu baris baru di posisi teratas, lalu ambil halaman 2:
+# dengan OFFSET (perilaku lama) T1 halaman 1 -> user1, user2, user3, user4, user5 T2 satu baris baru masuk di posisi teratas T3 halaman 2 -> user5, user6, user7, user8, user9
+^^^^^ DUPLIKAT
+# dengan cursor (perilaku baru) T1 halaman 1 -> user1, user2, user3, user4, user5 T2 satu baris baru masuk di posisi teratas T3 halaman 2 -> user6, user7, user8, user9, user10
+tidak ada duplikat, tidak ada yang terlewat
+Perhatikan bahwa baris yang baru masuk tidak muncul sama sekali pada halaman 2. Itu memang benar: cursor menambatkan posisi pada saat halaman 1 diambil, sehingga client melihat potret data yang konsisten. Data baru akan terlihat saat ia memuat ulang dari awal.
+
+9.3 Validasi deklaratif
+curl -X POST localhost:3000/api/v1/auth/register \ -H 'Content-Type: application/json' \ -d '{"username":"a b!","email":"bukan-email","password":"abc"}'
+{"success":false,"code":"VALIDATION_ERROR","message":"validasi gagal", "fields":{ "email":"format email tidak valid", "password":"minimal 8 karakter", "username":"hanya boleh huruf, angka, titik, dan garis bawah"}, "request_id":"30155df4-..."}
+# password cukup panjang, tetapi terlalu umum -d '{"username":"coba01","email":"c@unair.ac.id","password":"password123"}' -> "fields":{"password":"password terlalu umum"}
+# password tanpa angka -d '{"username":"coba02","email":"c@unair.ac.id","password":"tanpaangka"}' -> "fields":{"password":"harus memuat huruf dan angka"}
+
+# PATCH dengan string kosong TETAP diperiksa curl -X PATCH .../users/4 -d '{"username":""}' -> "fields":{"username":"minimal 3 karakter"}
+Dua hal yang harus benar sekaligus di sini. Pertama, status HTTP-nya wajib 422 Unprocessable Content -- bukan 400. Periksa dengan curl -o /dev/null -w '%{http_code}'. Kedua, seluruh pelanggaran dilaporkan sekaligus, bukan satu per satu, sehingga pemakai API dapat memperbaiki semuanya dalam satu putaran.
+Perhatikan pula isi pesannya. Pesan validasi yang muncul sebagai string KOSONG ("password":"") bukan hal normal: itu berarti aturan yang menolak justru menganggap nilainya sudah benar.
+
+9.4 Content negotiation
+curl "localhost:3000/api/v1/users?limit=3" -H 'Accept: text/csv' ...
+
+Content-Type: text/csv; charset=utf-8 Content-Disposition: attachment; filename="users.csv"
+
+id,username,email,role,is_active,created_at 16,penyusup,p@x.ac.id,user,true,2026-09-13T14:14:00Z 4,user1,user1@unair.ac.id,user,true,2026-09-13T14:12:40Z
+
+# format yang tidak kita miliki curl ... -H 'Accept: application/xml' -> 406 {"success":false,"code":"NOT_ACCEPTABLE",
+"message":"format yang diminta tidak tersedia, pilih salah satu dari: application/json, text/csv", ...}
+
+# */* dijawab dengan format bawaan
+
+curl ... -H 'Accept: */*'
+
+-> 200 (JSON)
+
+9.5 Keseragaman response kegagalan
+Permintaan GET /users/999999 GET /users?cursor=bukanbase64!! GET /api/v1/tidakada GET /users tanpa token POST /users dengan Content-Type: text/plain POST /users dengan JSON rusak GET /users?is_active=mungkin Accept: application/xml Body gagal, aturan tag dilanggar
+
+Status 404 400 404 401 415 400 400 406 422
+
+code NOT_FOUND BAD_REQUEST NOT_FOUND UNAUTHORIZED UNSUPPORTED_MEDIA_TYPE BAD_REQUEST BAD_REQUEST NOT_ACCEPTABLE VALIDATION_ERROR
+
+Kesembilan kegagalan itu berasal dari sembilan tempat berbeda -- middleware, parser query, ErrorHandler, service -- namun bentuk response-nya identik, karena hanya ada satu tempat yang menuliskannya.
+
+9.6 Kegagalan server tidak membocorkan detail teknis
+
+Rusakkan skema secara sengaja, lalu panggil endpoint daftar:
+psql -c "ALTER TABLE users RENAME COLUMN email TO email_x;"
+# yang diterima client: {"success":false,"code":"INTERNAL_ERROR",
+"message":"terjadi kesalahan pada server", "request_id":"11338117-b657-4436-97bf-e4b478f20059"}
+# yang tercatat di log -- HANYA di sini: {"level":"ERROR","msg":"request_failed",
+"request_id":"11338117-b657-4436-97bf-e4b478f20059", "path":"/api/v1/users","code":"INTERNAL_ERROR","status":500, "error":"INTERNAL_ERROR: terjadi kesalahan pada server:
+membaca hasil query: ERROR: column \"email\" does not exist (SQLSTATE 42703)"}
+psql -c "ALTER TABLE users RENAME COLUMN email_x TO email;"
+Inilah inti dari pemusatan error. Client menerima kalimat yang tidak membocorkan apa pun, tetapi tetap membawa request_id sehingga ia dapat melaporkan kegagalannya dengan tepat. Pengembang membuka log, mencari satu id itu, dan langsung menemukan nama column yang bermasalah beserta kode SQLSTATEnya. Tanpa pemusatan, pesan "column \"email\" does not exist" itu berpeluang terkirim langsung ke penyerang -- dan nama column adalah petunjuk awal yang berharga untuk menyusun serangan berikutnya.
+
+C.7 Tingkat log yang benar
+Satu kegagalan meninggalkan dua baris log. Tingkatnya ditentukan oleh siapa yang salah, bukan oleh seberapa mengganggu kegagalannya:
+
+Status 4xx (400, 401, 403, 404, 406, 415, 422) 5xx (500, 503)
+
+Siapa yang salah Pemakai API Sistem kita sendiri
+
+Tingkat log yang benar WARN -- msg "request_rejected" ERROR -- msg "request_failed"
+
+# picu satu 404, lalu periksa tingkat lognya curl -o /dev/null localhost:3000/api/v1/users/999999 -H "Authorization: ..."
+{"level":"WARN","msg":"request_rejected","path":"/api/v1/users/999999", "code":"NOT_FOUND","status":404}
+# hentikan PostgreSQL sejenak, lalu panggil endpoint yang menyentuh database {"level":"ERROR","msg":"request_failed","path":"/api/v1/users",
+"code":"INTERNAL_ERROR","status":500,"error":"... SQLSTATE ..."}
+Bila tertukar -- 404 tercatat ERROR sementara 500 tercatat WARN -- sistem pemantauan Anda akan berteriak setiap kali ada yang salah ketik URL, dan diam saja ketika database benar-benar mati. Itulah alasan pembedaan ini penting, dan alasan ia layak diuji.
+
+C.8 Daftar periksa ringkas Seluruh butir berikut harus bernilai benar sebelum Anda menganggap pekerjaan selesai. Gunakan sebagai daftar centang terakhir.
+
+No
+
+Perilaku yang harus benar
+
+1
+
+go build ./... berjalan tanpa satu pun pesan kesalahan
+
+2
+
+Aturan tag dilanggar -> status 422, bukan 400
+
+3
+
+Pesan validasi tidak pernah berupa string kosong
+
+4
+
+Password kuat DITERIMA; password lemah, terlalu pendek, atau terlalu umum DITOLAK
+
+5
+
+PATCH tanpa field apa pun -> 400; PATCH dengan {"username":""} -> 422; PATCH sah -> 200
+
+6
+
+Kegagalan database -> 500 INTERNAL_ERROR, TIDAK PERNAH 200 dengan body kosong
+
+7
+
+Pesan asli database tidak pernah muncul pada response, hanya pada log
+
+8
+
+4xx tercatat WARN; 5xx tercatat ERROR
+
+9
+
+Status pada access log sama dengan status yang diterima client
+
+10
+
+Halaman 1 terurut dari yang TERBARU ke yang terlama
+
+11
+
+Halaman 2 tidak memuat satu pun baris yang sudah muncul di halaman 1
+
+12
+
+Halaman terakhir tidak menyertakan next_cursor dan has_more bernilai false
+
+13
+
+Accept: text/csv menghasilkan berkas BERISI data, bukan berkas kosong
+
+14
+
+Accept: application/xml -> 406; Accept: */* -> 200 JSON
+
+Eksplorasi sendiri ? Ubah limit menjadi 1000 pada query string. Mengapa hasilnya tetap dibatasi, dan di baris mana
+pembatasan itu terjadi?
+? Susun cursor palsu: encode "0|1" dengan base64 lalu kirimkan. Apakah server menerimanya? Apakah itu masalah keamanan? Jelaskan alasannya.
+? Kirim Accept: text/csv pada endpoint GET /users/:id yang belum mendukung CSV. Apa yang terjadi, dan apakah perilaku itu yang Anda inginkan?
+? Setelah access log Anda benar, kembalikan sejenak menjadi c.Response().StatusCode() lalu panggil endpoint yang gagal. Perhatikan status yang tercatat. Mengapa kesalahan semacam ini sangat mudah lolos dari perhatian?
+? Tambahkan tag validate yang tidak ada terjemahannya pada messageFor, misalnya "uuid4". Apa pesan yang muncul, dan mengapa jaring pengaman itu lebih baik daripada mengembalikan string kosong?
+
+D. Tugas Mandiri
+D.1 Berita Acara Perbaikan (wajib, bobot terbesar) Temukan dan perbaiki kesembilan kesalahan pada Bagian B. Laporkan dalam bentuk tabel dengan enam kolom berikut, satu baris untuk setiap kesalahan:
+
+Kolom Berkas dan baris Jenis Gejala
+Akar masalah
+Perbaikan Bukti
+
+Isi
+Lokasi persis kesalahannya
+Ditolak compiler, atau lolos compiler tetapi salah perilaku
+Apa yang Anda amati. Untuk kesalahan compile: pesan compiler apa adanya. Untuk kesalahan perilaku: perintah curl beserta hasil yang keliru
+MENGAPA baris itu salah -- bukan sekadar "seharusnya begini". Satu sampai dua kalimat
+Potongan kode sesudah diperbaiki
+Perintah dan hasil yang membuktikan perbaikan berhasil, dirujuk ke butir Bagian C yang sesuai
+
+Kolom yang paling menentukan nilai adalah Akar masalah dan Bukti. Menuliskan perbaikan yang benar tanpa dapat menjelaskan mengapa yang lama salah menunjukkan Anda menyalin jawaban, bukan menemukannya. Sebaliknya, salah satu kesalahan yang tidak berhasil Anda temukan tetapi Anda laporkan secara jujur beserta apa saja yang sudah Anda coba akan tetap memperoleh sebagian nilai.
+
+Perbaikan Anda boleh berbeda dari yang dosen siapkan Untuk beberapa kesalahan, ada lebih dari satu perbaikan yang benar. Yang dinilai adalah apakah perilaku akhirnya memenuhi Bagian C, bukan apakah kode Anda sama persis dengan kunci. Namun ada satu batas: perbaikan tidak boleh dilakukan dengan menghapus pemeriksaan. Membuat sebuah pengujian lulus dengan cara menghapus aturan yang menolaknya bukan perbaikan, melainkan penurunan mutu -- dan akan dinilai nol untuk butir tersebut.
+Bagian D.2 sampai D.5 berikut dikerjakan SETELAH kesembilan kesalahan diperbaiki, dengan entity students yang Anda kembangkan sejak Modul 3.
+
+D.2 Validasi Deklaratif pada Entity students 1. Pindahkan seluruh aturan validasi students ke tag pada struct request, lalu hapus fungsi validasi manualnya. Sertakan pada laporan potongan kode SEBELUM dan SESUDAH untuk satu struct sebagai perbandingan. 2. Buat minimal satu custom validation yang sesuai dengan domain data Anda -- misalnya format NIM, tahun angkatan yang masuk akal, atau nama program studi yang dikenal -- beserta terjemahan pesannya pada messageFor. 3. Pastikan endpoint PATCH students memakai field pointer dan tag omitnil. Buktikan dengan curl bahwa {"name":""} DITOLAK, sedangkan body yang tidak memuat name sama sekali tetap diterima.
+D.3 Cursor Pagination pada Entity students 1. Tambahkan endpoint GET /students dengan pagination berbasis cursor. Tentukan sendiri pasangan column pengurutnya, dan jelaskan pada laporan mengapa pasangan itu menjamin urutan yang unik.
+
+2. Buat migration berisi index yang sesuai dengan ORDER BY yang Anda pakai. 3. Buktikan bahwa cursor Anda tidak menduplikasi data: ambil halaman 1, sisipkan satu baris yang akan
+menempati posisi teratas, lalu ambil halaman 2. Sertakan keluaran kedua halaman tersebut. 4. Jalankan EXPLAIN ANALYZE untuk query halaman pertama dan untuk query yang memakai cursor.
+Lampirkan keduanya dan tunjukkan apakah index Anda benar-benar terpakai.
+D.4 Content Negotiation dan Error Handling 1. Layani GET /students dalam dua format: JSON dan CSV. Pastikan Accept yang tidak dapat dipenuhi dijawab 406, dan Accept: */* dijawab dengan format bawaan. 2. Pastikan SELURUH endpoint students sudah mengembalikan error, bukan memanggil helper.Fail. Cari dengan grep dan buktikan pada laporan bahwa tidak ada lagi yang tersisa. 3. Susun tabel seluruh kode error yang mungkin dihasilkan endpoint students, beserta status dan situasi yang memicunya.
+D.5 Analisis Singkat Jawab dalam laporan, masing-masing satu paragraf:
+1. Endpoint students Anda kini tidak lagi dapat menampilkan "halaman 3 dari 40". Apakah itu kehilangan yang dapat diterima untuk kasus Anda? Bila tidak, apa yang akan Anda lakukan?
+2. Cursor Anda dapat dibaca dan dipalsukan siapa pun. Sebutkan satu hal yang TIDAK BOLEH Anda simpan di dalamnya, dan jelaskan apa yang akan terjadi bila hal itu tetap disimpan di sana.
+3. Setelah validasi dipindahkan ke tag, aturan mana pada entity Anda yang TETAP tidak dapat dinyatakan sebagai tag? Mengapa?
+
+Ketentuan Pengumpulan
+
+Nama berkas Isi laporan Kode sumber Batas waktu
+
+Tugas7_NIM.pdf
+Berita Acara Perbaikan (D.1) berisi sembilan baris, lalu bukti cursor tanpa duplikasi, hasil EXPLAIN ANALYZE, bukti content negotiation, tabel kode error, dan jawaban analisis D.5
+Diunggah ke repository masing-masing; tautan dicantumkan pada halaman pertama laporan
+Sebelum praktikum pertemuan berikutnya dimulai
+
+Yang dinilai adalah pembuktian, bukan penyalinan Pada pertemuan ini hampir seluruh kode sudah tersedia di modul -- tetapi sebagiannya sengaja salah. Karena itu yang dinilai bukan kodenya, melainkan bukti bahwa Anda menjalankannya, menemukan yang keliru, dan memahami mengapa keliru.
+Laporan yang memuat kode akhir yang sudah benar tetapi tanpa Berita Acara Perbaikan akan dinilai rendah, seberapa pun rapi kodenya: tanpa berita acara itu, tidak ada cara membedakan mahasiswa yang menemukan sendiri dari mahasiswa yang menyalin kode teman.
+
+Catatan Penyusunan
+Penyusunan modul ini dibantu oleh AI untuk pengembangan ide, penyusunan struktur materi, dan penulisan draf awal. Seluruh isi -- termasuk kode program, skema database, status code, dan keluaran pengujian -- telah dikurasi, dijalankan, dan diverifikasi ulang oleh dosen pengampu sebelum digunakan.
+Seluruh potongan kode pada modul ini telah dikompilasi, diperiksa dengan go vet, dan dijalankan terhadap PostgreSQL 16. Perilaku tag omitempty dan omitnil pada tabel A.3 diperoleh dari pengujian langsung terhadap validator v10.22.1, bukan dari dokumentasi. Demikian pula bukti duplikasi data pada pagination berbasis offset di bagian 9.2 dan kebocoran pesan database di bagian 9.6: keduanya adalah keluaran yang benar-benar diamati.
+Bug pada RequestLogger yang dibahas pada Langkah 2 dan 3 ditemukan melalui pengujian, bukan diadaadakan sebagai bahan ajar. Ia sengaja dipertahankan di dalam modul karena memperlihatkan sesuatu yang jarang tertulis di buku: perbaikan arsitektur dapat merusak bagian lain yang tampak tidak berhubungan.
+Kesembilan kesalahan yang ditanam pada Bagian B dipasang satu per satu pada salinan proyek yang sudah terbukti benar, lalu dijalankan untuk memastikan masing-masing benar-benar menghasilkan gejala yang dimaksud. Ketiga pesan compiler pada kunci jawaban adalah keluaran go build apa adanya. Keenam kesalahan perilaku sudah diperiksa agar tidak saling menutupi: memperbaiki salah satu tidak mengubah gejala yang lain, sehingga mahasiswa selalu melihat kemajuan atas setiap perbaikan yang benar.
+Satu jenis kesalahan sengaja TIDAK ditanam, yaitu kerentanan SQL injection pada penyusunan parameter query. Pertimbangannya: bila seorang mahasiswa tidak berhasil menemukannya, yang tertinggal di dalam kodenya bukan sekadar jawaban yang salah, melainkan celah keamanan yang dapat terbawa ke proyek berikutnya. Kesalahan yang ditanam pada modul ini seluruhnya dipilih agar akibat terburuknya adalah perilaku yang keliru, bukan sistem yang dapat ditembus.
+Rujukan
+· Dokumentasi go-playground/validator: https://pkg.go.dev/github.com/go-playground/validator/v10 · Dokumentasi Fiber -- Context (Accepts, BodyParser): https://docs.gofiber.io/api/ctx · Dokumentasi PostgreSQL 16 -- Row Constructor Comparison:
+https://www.postgresql.org/docs/16/functions-comparisons.html · Dokumentasi PostgreSQL 16 -- Indexes and ORDER BY: https://www.postgresql.org/docs/16/indexes-
+ordering.html · RFC 9110, HTTP Semantics -- Content Negotiation, status 406 dan 415: https://www.rfc-
+editor.org/rfc/rfc9110 · RFC 4180, Common Format and MIME Type for CSV Files: https://www.rfc-editor.org/rfc/rfc4180 · Paket standar Go -- encoding/csv: https://pkg.go.dev/encoding/csv
+
+

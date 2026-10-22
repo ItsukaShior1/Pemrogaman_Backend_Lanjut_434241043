@@ -1,0 +1,13 @@
+name: New Environment
+values:
+  - key: base_url
+    value: ''
+  - key: t_admin
+    secret: true
+  - key: t_staff
+    secret: true
+  - key: t_owner
+    secret: true
+  - key: t_other
+    secret: true
+color: 0

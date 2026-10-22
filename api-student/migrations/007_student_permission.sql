@@ -24,7 +24,6 @@ INSERT INTO permissions (name, description) VALUES
    SET owner_id = (SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1)
    WHERE owner_id IS NULL;
 
-   -- Kalau TIDAK ada admin sama sekali, isi dengan user id terkecil sebagai fallback.
    UPDATE students
    SET owner_id = (SELECT id FROM users ORDER BY id LIMIT 1)
    WHERE owner_id IS NULL
