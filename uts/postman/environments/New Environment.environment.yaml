@@ -1,0 +1,7 @@
+name: New Environment
+values:
+  - key: admin_token
+    secret: true
+  - key: mhs_token
+    secret: true
+color: 120
