@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log"
+	"log/slog"
 	"time"
+	"os"
 
 	"github.com/gofiber/fiber/v2"
 
