@@ -1,9 +1,7 @@
 # Binaries
-api-students.exe
-api-students
-api-student.exe
-api-student
 *.exe
+/api-student
+/api-students
 
 # Go test artifacts
 *.test
@@ -19,15 +17,14 @@ go.work.sum
 *.swp
 .DS_Store
 
-# Debug body files used during curl tests
-body*.json
-body_*.json
+# Berkas body hasil uji curl (hanya di root)
+/body*.json
 
-# PDF laporan — di-render manual saat submit, tidak perlu di-tracked
+# PDF laporan — dirender manual saat submit, tidak perlu di-tracked
 Tugas*.pdf
 Laporan*.pdf
 
-# Generator script (tidak dipakai setelah generate)
+# Script generator (dipakai sekali, tidak disimpan di repo)
 gen_screenshots.py
 test_all.ps1
 _print.html
@@ -37,8 +34,15 @@ build_pdf.py
 DejaVuSans*.ttf
 
 # Logs — file log dirotasi otomatis dan tidak masuk repository
-logs/
+/logs/
 *.log
 
 # Env lokal (tidak boleh di-commit)
 .env
+
+# Output bukti portofolio (mengandung tangkapan layar, tidak ikut terunggah)
+docs/bukti/
+
+# Hasil generator laporan
+__pycache__/
+*.pyc

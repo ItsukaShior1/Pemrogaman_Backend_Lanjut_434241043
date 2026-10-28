@@ -102,18 +102,17 @@ func NewPortfolioRepository(db *mongo.Database) PortfolioRepository {
 func (r *portfolioMongoRepository) EnsureIndexes(ctx context.Context) error {
 	_, err := r.coll.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
-			// Satu mahasiswa hanya boleh punya SATU dokumen portofolio.
+
 			Keys:    bson.D{{Key: "student_id", Value: 1}},
 			Options: options.Index().SetUnique(true).SetName("portfolio_student_unique"),
 		},
 		{
-			// Multikey index: setiap teknologi di dalam array projects
-			// diindeks. Dipakai endpoint statistik teknologi.
+
 			Keys:    bson.D{{Key: "projects.technologies", Value: 1}},
 			Options: options.Index().SetName("portfolio_technologies"),
 		},
 		{
-			// Mempercepat pencarian proyek saat menghapus satu proyek.
+
 			Keys:    bson.D{{Key: "projects._id", Value: 1}},
 			Options: options.Index().SetName("portfolio_project_ids"),
 		},
