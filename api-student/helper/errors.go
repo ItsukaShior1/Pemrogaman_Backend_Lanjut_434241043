@@ -1,4 +1,5 @@
-  
+package helper
+
 import (
 	"fmt"
 
@@ -47,6 +48,9 @@ func (e *AppError) Error() string {
 // untuk menemukan error asli di bawahnya.
 func (e *AppError) Unwrap() error { return e.cause }
 
+// Cause mengembalikan error asli untuk keperluan log. Nil bila tidak ada.
+func (e *AppError) Cause() error { return e.cause }
+
 func BadRequest(message string) *AppError {
 	return &AppError{Status: fiber.StatusBadRequest, Code: CodeBadRequest, Message: message}
 }
@@ -88,4 +92,4 @@ func Internal(cause error) *AppError {
 		Status: fiber.StatusInternalServerError, Code: CodeInternal,
 		Message: "terjadi kesalahan pada server", cause: cause,
 	}
-} 
+}

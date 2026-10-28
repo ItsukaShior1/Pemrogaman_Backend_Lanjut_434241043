@@ -5,9 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log"
-	"log/slog"
 	"time"
-	"os"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -33,8 +31,22 @@ func main() {
 	}
 	defer pool.Close()
 
+	mongoClient, err := database.NewMongoClient(context.Background())
+	if err != nil {
+		log.Fatalf("mongodb: %v", err)
+	}
+	// Disconnect menutup seluruh koneksi di pool milik driver. Diberi batas
+	// waktu sendiri, karena context milik request sudah tidak berlaku saat
+	// aplikasi berhenti.
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = mongoClient.Disconnect(ctx)
+	}()
+	mongoDB := mongoClient.Database(config.GetEnv("MONGO_DATABASE", "praktikum_backend"))
+
 	app := fiber.New(fiber.Config{
-		AppName: "Praktikum Backend Lanjut - Pertemuan 6 (api-student)",
+		AppName: "Praktikum Backend Lanjut - Pertemuan 10 (api-student)",
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			status := fiber.StatusInternalServerError
 			pesan := "terjadi kesalahan pada server"
@@ -82,12 +94,27 @@ func main() {
 	authSvc := service.NewAuthService(userRepo, refreshRepo, tokens, limiter)
 	userSvc := service.NewUserService(userRepo, perms)
 
+	// Index MongoDB dibuat sekali saat aplikasi menyala. Membuat index yang
+	// sudah ada tidak melakukan apa pun, sehingga aman dipanggil berulang kali.
+	portfolioRepo := repository.NewPortfolioRepository(mongoDB)
+	if err := portfolioRepo.EnsureIndexes(context.Background()); err != nil {
+		log.Fatalf("index student_portfolios: %v", err)
+	}
+
+	reviewRepo := repository.NewReviewRepository(mongoDB)
+	if err := reviewRepo.EnsureIndexes(context.Background()); err != nil {
+		log.Fatalf("index course_reviews: %v", err)
+	}
+
 	route.Register(app, route.Dependencies{
-		Pool:        pool,
-		JWT:         tokens,
-		Permissions: perms,
-		UserService: userSvc,
-		AuthService: authSvc,
+		Pool:                pool,
+		Mongo:               mongoClient,
+		JWT:                 tokens,
+		Permissions:         perms,
+		UserService:         userSvc,
+		AuthService:         authSvc,
+		PortfolioRepository: portfolioRepo,
+		ReviewRepository:    reviewRepo,
 	})
 
 	app.Use(logger.RequestLogger())

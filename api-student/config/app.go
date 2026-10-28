@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"api-student/app/model"
 	"api-student/app/service"
 	"api-student/helper"
 )
@@ -55,12 +56,16 @@ func newErrorHandler(logger *slog.Logger) fiber.ErrorHandler {
 		// sistem; mencatatnya sebagai Error membuat log penuh bising
 		// sehingga kerusakan yang sesungguhnya justru tenggelam.
 		if appErr.Status >= fiber.StatusInternalServerError {
+			cause := "unknown"
+			if appErr.Cause() != nil {
+				cause = appErr.Cause().Error()
+			}
 			logger.Error("request_failed",
 				slog.String("request_id", requestID),
 				slog.String("path", c.Path()),
 				slog.String("code", appErr.Code),
 				slog.Int("status", appErr.Status),
-				slog.String("error", appErr.Cause.Error()))
+				slog.String("error", cause))
 		} else {
 			logger.Warn("request_rejected",
 				slog.String("request_id", requestID),

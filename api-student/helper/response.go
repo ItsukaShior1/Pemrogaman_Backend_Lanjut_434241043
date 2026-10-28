@@ -81,6 +81,13 @@ var (
 	}
 )
 
+// RequestID mengambil id request yang dipasang middleware requestid.
+// Dipakai saat menulis log dan saat menjawab kegagalan.
+func RequestID(c *fiber.Ctx) string {
+	id, _ := c.Locals("requestid").(string)
+	return id
+}
+
 // ParseListQuery membaca parameter query string GET /students dan
 // mengembalikan ListQuery yang sudah dinormalisasi (default value +
 // clamp + whitelist).

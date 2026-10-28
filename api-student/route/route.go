@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"api-student/app/repository"
 	"api-student/app/service"
@@ -16,11 +17,14 @@ import (
 )
 
 type Dependencies struct {
-	Pool        *pgxpool.Pool
-	JWT         *helper.TokenIssuer
-	Permissions *helper.PermissionSet
-	UserService *service.UserService
-	AuthService *service.AuthService
+	Pool                *pgxpool.Pool
+	Mongo               *mongo.Client
+	JWT                 *helper.TokenIssuer
+	Permissions         *helper.PermissionSet
+	UserService         *service.UserService
+	AuthService         *service.AuthService
+	PortfolioRepository repository.PortfolioRepository
+	ReviewRepository    repository.ReviewRepository
 }
 
 func Register(app *fiber.App, deps Dependencies) {
@@ -32,7 +36,7 @@ func Register(app *fiber.App, deps Dependencies) {
 	})
 
 	api := app.Group("/api/v1")
-	api.Get("/health", healthCheckFromPool(deps.Pool))
+	api.Get("/health", healthCheck(deps.Pool, deps.Mongo))
 
 	auth := api.Group("/auth", middleware.RequireJSON())
 	auth.Post("/register", deps.AuthService.Register)
@@ -84,12 +88,47 @@ func Register(app *fiber.App, deps Dependencies) {
 	students.Put("/:id", studentSvc.Replace)
 	students.Patch("/:id", studentSvc.Patch)
 
+	// Portofolio mahasiswa: identitas tetap di PostgreSQL, portofolionya
+	// disimpan di MongoDB.
+	portfolioSvc := service.NewPortfolioService(deps.PortfolioRepository, studentRepo, perms)
+
+	students.Get("/:id/portfolio", portfolioSvc.Get)
+	students.Put("/:id/portfolio", portfolioSvc.Replace)
+	students.Post("/:id/portfolio/projects", portfolioSvc.AddProject)
+	students.Delete("/:id/portfolio/projects/:projectId", portfolioSvc.DeleteProject)
+
+	portfolios := api.Group("/portfolios", middleware.RequireAuth(deps.JWT))
+	portfolios.Get("/stats/technologies", portfolioSvc.TechnologyStats)
+
+	// Ulasan kelas: datanya di MongoDB, hak aksesnya tetap di PostgreSQL.
+	courseRepo := repository.NewCourseRepository(deps.Pool)
+	courseSvc := service.NewCourseService(courseRepo)
+	reviewSvc := service.NewReviewService(deps.ReviewRepository, courseRepo, perms)
+
+	courses := api.Group("/courses", middleware.RequireAuth(deps.JWT))
+	courses.Get("/", courseSvc.List)
+	courses.Get("/:id", courseSvc.Get)
+	courses.Get("/:id/reviews", reviewSvc.ListByCourse)
+	courses.Get("/:id/reviews/summary", reviewSvc.Summary)
+	courses.Post("/:id/reviews", middleware.RequireJSON(), reviewSvc.Create)
+
+	reviews := api.Group("/reviews",
+		middleware.RequireJSON(),
+		middleware.RequireAuth(deps.JWT))
+	reviews.Get("/:id", reviewSvc.Get)
+	reviews.Patch("/:id", reviewSvc.Update)
+	reviews.Delete("/:id", reviewSvc.Delete)
+	reviews.Post("/:id/replies", reviewSvc.Reply)
+	reviews.Post("/:id/helpful", reviewSvc.MarkHelpful)
+
 	app.Use(func(c *fiber.Ctx) error {
 		return helper.Fail(c, fiber.StatusNotFound, "endpoint tidak ditemukan")
 	})
 }
 
-func healthCheckFromPool(pool *pgxpool.Pool) fiber.Handler {
+// healthCheck memeriksa DUA database. Aplikasi dianggap sehat hanya bila
+// keduanya dapat dihubungi, dan pesan kegagalannya menyebut yang mana.
+func healthCheck(pool *pgxpool.Pool, mongoClient *mongo.Client) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx, cancel := context.WithTimeout(c.UserContext(), 2*time.Second)
 		defer cancel()
@@ -98,9 +137,18 @@ func healthCheckFromPool(pool *pgxpool.Pool) fiber.Handler {
 			return helper.Fail(
 				c,
 				fiber.StatusServiceUnavailable,
-				"database tidak dapat dihubungi",
+				"PostgreSQL tidak dapat dihubungi",
 			)
 		}
-		return helper.Ok(c, "server dan database berjalan", nil)
+		if mongoClient != nil {
+			if err := mongoClient.Ping(ctx, nil); err != nil {
+				return helper.Fail(
+					c,
+					fiber.StatusServiceUnavailable,
+					"MongoDB tidak dapat dihubungi",
+				)
+			}
+		}
+		return helper.Ok(c, "server, PostgreSQL, dan MongoDB berjalan", nil)
 	}
 }
